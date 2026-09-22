@@ -2,13 +2,21 @@
 <?= $this->section('content') ?>
 
 <?php
+$now = time();
 $awaiting = count(array_filter($changes, static fn ($c) => $c['state'] === 'Awaiting approval'));
-$scheduled = count(array_filter($changes, static fn ($c) => $c['state'] === 'Scheduled'));
+// "Scheduled" only counts windows that actually fall in the next two weeks.
+$scheduled = count(array_filter($changes, static function ($c) use ($now) {
+    $w = strtotime($c['window_at']);
+
+    return $c['state'] === 'Scheduled' && $w >= $now && $w < $now + 14 * 86400;
+}));
 $inProgress = count(array_filter($changes, static fn ($c) => $c['state'] === 'In progress'));
-$completed = count(array_filter($changes, static fn ($c) => $c['state'] === 'Completed'));
-$rejected  = count(array_filter($changes, static fn ($c) => $c['state'] === 'Rejected'));
-$closedN   = $completed + $rejected;
+// Success rate over changes whose window fell in the last 90 days and that reached an outcome.
+$recent    = array_filter($changes, static fn ($c) => strtotime($c['window_at']) >= $now - 90 * 86400 && strtotime($c['window_at']) <= $now);
+$completed = count(array_filter($recent, static fn ($c) => $c['state'] === 'Completed'));
+$closedN   = count(array_filter($recent, static fn ($c) => in_array($c['state'], ['Completed', 'Rejected', 'Cancelled'], true)));
 $successPct = $closedN ? (int) round($completed / $closedN * 100) . '%' : '—';
+$canManage = $canManage ?? false;
 ?>
 <div class="p-5 max-w-[1400px] mx-auto fade-in">
   <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
@@ -21,11 +29,14 @@ $successPct = $closedN ? (int) round($completed / $closedN * 100) . '%' : '—';
 
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <?= th_kpi('Awaiting approval', $awaiting, 'Blocking scheduled work', 'signal') ?>
-    <?= th_kpi('Scheduled', $scheduled, 'Next 14 days') ?>
+    <?= th_kpi('Scheduled', $scheduled, 'Window in the next 14 days') ?>
     <?= th_kpi('In progress', $inProgress, 'Running now', 'brand') ?>
-    <?= th_kpi('Success rate', $successPct, $closedN ? $completed . ' completed of ' . $closedN . ' closed' : 'No completed changes yet', 'brand') ?>
+    <?= th_kpi('Success rate', $successPct, $closedN ? $completed . ' completed of ' . $closedN . ' closed · last 90 days' : 'No closed changes in the last 90 days', 'brand') ?>
   </div>
 
+  <?php if (! $changes): ?>
+    <?= th_card(th_empty('branch', 'No changes yet', 'Raise the first change to plan work, capture the backout and get it signed off.', th_btn('Raise change', 'data-modal="newChange"', 'brand', 'plus'))) ?>
+  <?php endif ?>
   <div class="space-y-3">
     <?php foreach ($changes as $c):
       $windowTs = strtotime($c['window_at']);
@@ -37,8 +48,8 @@ $successPct = $closedN ? (int) round($completed / $closedN * 100) . '%' : '—';
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-mono text-[11.5px] text-faint"><?= esc($c['code']) ?></span>
-            <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold <?= TH_CHANGE_STATE[$c['state']] ?>"><?= esc($c['state']) ?></span>
-            <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold <?= TH_RISK[$c['risk']] ?>"><?= esc($c['risk']) ?> risk</span>
+            <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold <?= TH_CHANGE_STATE[$c['state']] ?? 'bg-canvas text-muted border-line' ?>"><?= esc($c['state']) ?></span>
+            <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold <?= TH_RISK[$c['risk']] ?? 'bg-canvas text-muted border-line' ?>"><?= esc($c['risk']) ?> risk</span>
             <span class="text-[11.5px] text-faint"><?= esc($c['type']) ?></span>
           </div>
           <h3 class="font-display text-[15px] font-semibold text-ink mt-1.5"><?= esc($c['title']) ?></h3>
@@ -53,34 +64,36 @@ $successPct = $closedN ? (int) round($completed / $closedN * 100) . '%' : '—';
             <div class="text-[12.5px] text-ink-500"><?= esc($c['impact']) ?></div></div>
           <div><div class="text-[11px] uppercase tracking-[.09em] text-faint mb-1">Approvals</div>
             <div class="space-y-1">
-              <?php foreach ($approvals as $ap): $by = $users[(int) $ap['by']] ?? null; ?>
-              <div class="flex items-center gap-1.5 text-[12px]">
+              <?php foreach ($approvals as $ap): $by = $users[(int) ($ap['by'] ?? 0)] ?? null; $st = (string) ($ap['status'] ?? 'Pending'); ?>
+              <div class="flex items-center gap-1.5 text-[12px]" <?= ! empty($ap['decided_at']) ? 'title="' . esc(th_date($ap['decided_at']), 'attr') . '"' : '' ?>>
                 <?= th_avatar($by, 20) ?><span class="text-ink-500 truncate flex-1"><?= esc($by['name'] ?? '—') ?></span>
-                <span class="<?= $ap['status'] === 'Approved' ? 'text-brand' : ($ap['status'] === 'Rejected' ? 'text-alert' : 'text-signal') ?> font-medium"><?= esc($ap['status']) ?></span>
+                <span class="<?= $st === 'Approved' ? 'text-brand' : ($st === 'Rejected' ? 'text-alert' : 'text-signal') ?> font-medium"><?= esc($st) ?></span>
               </div>
               <?php endforeach ?>
             </div></div>
-          <?php if ($c['state'] === 'Awaiting approval'): ?>
+          <?php if ($canManage && $c['state'] === 'Awaiting approval' && (int) $c['owner_id'] !== (int) $me['id']): ?>
           <div class="flex gap-2 pt-1">
             <form method="post" action="<?= site_url('app/changes/' . $c['id'] . '/approve') ?>" class="flex-1"><?= csrf_field() ?>
               <button type="submit" class="w-full h-8 rounded-lg bg-brand text-white text-[12.5px] font-semibold hover:bg-brand-600">Approve</button></form>
             <form method="post" action="<?= site_url('app/changes/' . $c['id'] . '/reject') ?>"><?= csrf_field() ?>
               <button type="submit" class="h-8 px-2.5 rounded-lg border border-alert-100 text-alert text-[12.5px] font-medium hover:bg-alert-50">Reject</button></form>
           </div>
-          <?php elseif ($c['state'] === 'Scheduled'): ?>
+          <?php elseif ($canManage && $c['state'] === 'Scheduled'): ?>
           <form method="post" action="<?= site_url('app/changes/' . $c['id'] . '/state') ?>" class="pt-1"><?= csrf_field() ?>
             <input type="hidden" name="to" value="In progress">
             <button type="submit" class="w-full h-8 rounded-lg bg-ink text-white text-[12.5px] font-semibold hover:bg-ink-700">Start work</button></form>
-          <?php elseif ($c['state'] === 'In progress'): ?>
+          <?php elseif ($canManage && $c['state'] === 'In progress'): ?>
           <form method="post" action="<?= site_url('app/changes/' . $c['id'] . '/state') ?>" class="pt-1"><?= csrf_field() ?>
             <input type="hidden" name="to" value="Completed">
             <button type="submit" class="w-full h-8 rounded-lg bg-brand text-white text-[12.5px] font-semibold hover:bg-brand-600">Mark completed</button></form>
           <?php endif ?>
           <div class="flex gap-2 pt-1">
             <a href="<?= site_url('app/changes/' . $c['id']) ?>" class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line bg-white text-[12.5px] font-medium text-ink-500 hover:bg-canvas transition"><?= th_icon('ext', 'w-3.5 h-3.5') ?>Open</a>
+            <?php if ($canManage): ?>
             <?= th_btn('Edit', 'data-modal="editChange-' . $c['id'] . '"', 'ghost', 'edit') ?>
             <form method="post" action="<?= site_url('app/changes/' . $c['id'] . '/delete') ?>" data-confirm="Delete <?= esc($c['code'], 'attr') ?>?" data-confirm-label="Delete">
               <?= csrf_field() ?><?= th_btn('Delete', 'type="submit"', 'danger', 'trash') ?></form>
+            <?php endif ?>
           </div>
         </div>
       </div>
@@ -91,7 +104,7 @@ $successPct = $closedN ? (int) round($completed / $closedN * 100) . '%' : '—';
 <?= $this->endSection() ?>
 
 <?= $this->section('modals') ?>
-<?php foreach ($changes as $c): ?>
+<?php if ($canManage): foreach ($changes as $c): ?>
 <template id="tpl-editChange-<?= $c['id'] ?>">
   <form method="post" action="<?= site_url('app/changes/' . $c['id']) ?>" data-modal-title="Edit <?= esc($c['code'], 'attr') ?>" data-modal-width="max-w-xl" data-submit="Save">
     <?= csrf_field() ?>
@@ -119,7 +132,7 @@ $successPct = $closedN ? (int) round($completed / $closedN * 100) . '%' : '—';
     </div>
   </form>
 </template>
-<?php endforeach ?>
+<?php endforeach; endif ?>
 
 <template id="tpl-newChange">
   <form method="post" action="<?= site_url('app/changes') ?>" data-modal-title="Raise a change" data-modal-width="max-w-xl" data-submit="Submit for approval">

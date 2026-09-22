@@ -10,6 +10,9 @@
     <?= th_btn('Raise problem', 'data-modal="newProblem"', 'brand', 'plus') ?>
   </div>
 
+  <?php if (! $problems): ?>
+    <?= th_card(th_empty('warn', 'No problems raised', 'When the same incident keeps coming back, raise a problem to track the root cause.', th_btn('Raise problem', 'data-modal="newProblem"', 'brand', 'plus'))) ?>
+  <?php endif ?>
   <div class="space-y-3">
     <?php foreach ($problems as $p): $owner = $users[(int) $p['owner_id']] ?? null; ?>
     <div class="bg-white border border-line rounded-xl shadow-card p-4">

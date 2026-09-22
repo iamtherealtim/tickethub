@@ -13,6 +13,8 @@
         <?= th_avatar($author, 24) ?><span><?= esc($author['name'] ?? '—') ?></span><span class="text-line">·</span>
         <span>Updated <?= th_rel($a['updated_at']) ?></span><span class="text-line">·</span><span class="font-mono"><?= number_format((int) $a['views']) ?> views</span>
         <div class="ml-auto flex gap-2">
+          <?php // Copies the portal link: that is the one requesters can open. ?>
+          <?= th_btn('Share', 'type="button" data-copy="' . esc(site_url('portal/kb/' . $a['id']), 'attr') . '" title="Copy the portal link"', 'ghost', 'link') ?>
           <?= th_btn('Edit', 'data-modal="editArticle"', 'ghost', 'edit') ?>
           <form method="post" action="<?= site_url('app/kb/' . $a['id'] . '/delete') ?>" data-confirm="Delete &ldquo;<?= esc($a['title'], 'attr') ?>&rdquo;? Portal links to it will stop working." data-confirm-label="Delete">
             <?= csrf_field() ?><?= th_btn('Delete', 'type="submit"', 'danger', 'trash') ?></form>
@@ -61,6 +63,8 @@
       <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Body (HTML)<span class="text-alert"> *</span></label>
         <textarea name="body" rows="14" required class="w-full px-2.5 py-2 rounded-lg border border-line text-[12.5px] font-mono leading-relaxed focus:border-brand"><?= esc($a['body']) ?></textarea>
         <p class="text-[11.5px] text-faint mt-1">Supports <code class="font-mono">&lt;h2&gt;</code>, <code class="font-mono">&lt;p&gt;</code>, <code class="font-mono">&lt;ul&gt;&lt;li&gt;</code> and <code class="font-mono">&lt;code&gt;</code>.</p></div>
+      <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Tags</label>
+        <input name="tags" value="<?= esc(implode(', ', $tags), 'attr') ?>" placeholder="vpn, remote access — comma separated" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] placeholder:text-faint focus:border-brand"></div>
     </div>
   </form>
 </template>

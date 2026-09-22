@@ -12,7 +12,14 @@ use App\Libraries\TicketIntake;
  * (Prefer the Graph mailbox poller for Microsoft 365 — Admin → Email settings.)
  *
  * POST /api/inbound-email  with header X-Inbound-Secret: <secret>
- * JSON body: { "from": "user@example.com", "subject": "...", "text": "..." }
+ * JSON body: {
+ *   "from": "user@example.com" | "Name <user@example.com>", "from_name": "...",
+ *   "subject": "...", "text": "...",
+ *   "message_id": "<...>", "in_reply_to": "<...>", "references": "<...> <...>",
+ *   "headers": { "Auto-Submitted": "...", "Precedence": "...", ... },
+ *   "attachments": [{ "name": "log.txt", "content": "<base64>" }]
+ * }
+ * Everything but from/subject/text is optional.
  */
 class InboundEmailController extends BaseController
 {
@@ -30,17 +37,29 @@ class InboundEmailController extends BaseController
         $payload = $this->request->getJSON(true) ?? [];
 
         // Optional attachments: [{ "name": "log.txt", "content": "<base64>" }, ...]
-        $atts = [];
-        foreach ((array) ($payload['attachments'] ?? []) as $a) {
-            if (! is_array($a) || empty($a['name']) || empty($a['content'])) {
-                continue;
+        // Decoded and written only once intake has accepted the sender.
+        $stored = [];
+        $atts   = static function () use (&$stored, $payload) {
+            foreach ((array) ($payload['attachments'] ?? []) as $a) {
+                if (! is_array($a) || empty($a['name']) || empty($a['content'])) {
+                    continue;
+                }
+                $bytes = base64_decode((string) $a['content'], true);
+                if ($bytes === false || $bytes === '') {
+                    continue;
+                }
+                if ($s = TicketIntake::storeRawAttachment((string) $a['name'], $bytes)) {
+                    $stored[] = $s;
+                }
             }
-            $bytes = base64_decode((string) $a['content'], true);
-            if ($bytes === false || $bytes === '') {
-                continue;
-            }
-            if ($stored = TicketIntake::storeRawAttachment((string) $a['name'], $bytes)) {
-                $atts[] = $stored;
+
+            return $stored;
+        };
+
+        $headers = [];
+        foreach ((array) ($payload['headers'] ?? []) as $k => $v) {
+            if (is_string($k) && is_scalar($v)) {
+                $headers[$k] = (string) $v;
             }
         }
 
@@ -48,16 +67,27 @@ class InboundEmailController extends BaseController
             (string) ($payload['from'] ?? ''),
             (string) ($payload['subject'] ?? ''),
             (string) ($payload['text'] ?? ''),
-            $atts
+            $atts,
+            [
+                'message_id'  => (string) ($payload['message_id'] ?? ($headers['Message-ID'] ?? $headers['Message-Id'] ?? '')),
+                'in_reply_to' => (string) ($payload['in_reply_to'] ?? ($headers['In-Reply-To'] ?? '')),
+                'references'  => $payload['references'] ?? ($headers['References'] ?? ''),
+                'from_name'   => (string) ($payload['from_name'] ?? ''),
+                'headers'     => $headers,
+            ]
         );
 
         if (! $result['ok']) {
-            return $this->response->setStatusCode(422)->setJSON(['error' => $result['reason']]);
+            // Duplicates and auto-replies are handled, not errors: a 2xx stops the
+            // provider retrying them.
+            $code = in_array($result['action'], ['duplicate', 'ignored'], true) ? 200 : 422;
+
+            return $this->response->setStatusCode($code)->setJSON(['ok' => false, 'action' => $result['action'], 'error' => $result['reason']]);
         }
 
         return $this->response->setJSON([
             'ok' => true, 'ticket' => $result['ticket'], 'action' => $result['action'],
-            'attachments' => count($atts),
+            'attachments' => count($stored),
         ]);
     }
 }

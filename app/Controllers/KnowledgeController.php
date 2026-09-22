@@ -6,12 +6,36 @@ class KnowledgeController extends BaseController
 {
     public function index()
     {
+        $q = trim((string) $this->request->getGet('q'));
+        $all = $this->db->table('articles')->orderBy('updated_at', 'DESC')->get()->getResultArray();
+        $articles = $all;
+        if ($q !== '') {
+            // Search narrows the list; the category rail keeps counting the full set.
+            $b = $this->db->table('articles')->orderBy('updated_at', 'DESC')
+                ->groupStart()->like('title', $q)->orLike('body', $q)->orLike('tags', $q)->groupEnd();
+            $articles = $b->get()->getResultArray();
+        }
+
         return view('agent/kb', $this->agentShared() + [
             'title' => 'Knowledge', 'nav' => 'kb',
-            'articles' => $this->db->table('articles')->orderBy('updated_at', 'DESC')->get()->getResultArray(),
+            'articles' => $articles, 'allArticles' => $all, 'q' => $q,
             'cat' => (string) ($this->request->getGet('cat') ?: 'All'),
             'users' => $this->users(),
         ]);
+    }
+
+    /** "vpn, remote access" → ["vpn", "remote access"], de-duplicated, capped. */
+    private static function parseTags(?string $raw): array
+    {
+        $tags = [];
+        foreach (preg_split('/[,\n]+/', (string) $raw) ?: [] as $t) {
+            $t = mb_strtolower(trim($t));
+            if ($t !== '' && mb_strlen($t) <= 30 && ! in_array($t, $tags, true)) {
+                $tags[] = $t;
+            }
+        }
+
+        return array_slice($tags, 0, 12);
     }
 
     public function article(int $id)
@@ -48,9 +72,10 @@ class KnowledgeController extends BaseController
             return redirect()->back();
         }
         $this->db->table('articles')->where('id', $id)->update([
-            'title' => $p['title'], 'category' => $p['category'] ?: $a['category'],
-            'status' => $p['status'] === 'Published' ? 'Published' : 'Draft',
+            'title' => $p['title'], 'category' => ($p['category'] ?? '') ?: $a['category'],
+            'status' => ($p['status'] ?? '') === 'Published' ? 'Published' : 'Draft',
             'body' => th_sanitize_html($p['body']),
+            'tags' => json_encode(self::parseTags($p['tags'] ?? null)),
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
         $this->toast('Article saved');
@@ -100,9 +125,9 @@ class KnowledgeController extends BaseController
             ? th_sanitize_html($body)
             : '<p>' . str_replace("\n", '</p><p>', esc($body)) . '</p>';
         $this->db->table('articles')->insert([
-            'title' => $p['title'], 'category' => $p['category'] ?? 'Accounts & access',
-            'status' => $p['status'] === 'Published' ? 'Published' : 'Draft',
-            'author_id' => $this->me['id'], 'body' => $paras, 'tags' => '[]',
+            'title' => $p['title'], 'category' => ($p['category'] ?? '') ?: 'Accounts & access',
+            'status' => ($p['status'] ?? '') === 'Published' ? 'Published' : 'Draft',
+            'author_id' => $this->me['id'], 'body' => $paras, 'tags' => json_encode(self::parseTags($p['tags'] ?? null)),
             'views' => 0, 'up_votes' => 0, 'down_votes' => 0,
             'created_at' => $now, 'updated_at' => $now,
         ]);

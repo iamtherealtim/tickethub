@@ -21,38 +21,43 @@ class ReportsController extends BaseController
         $m = $this->metrics();
 
         $out = fopen("php://temp", "r+");
-        fputcsv($out, ["Metric", "Value", "Detail"]);
-        fputcsv($out, ["Window", $m["range"] . " days", $m["ticketsInRange"] . " ticket(s) raised"]);
-        fputcsv($out, ["Median first response", $m["medianFr"] ? th_dur($m["medianFr"]) : "-", "Across answered tickets"]);
-        fputcsv($out, ["Median resolution", $m["medianRes"] ? th_dur($m["medianRes"]) : "-", "Across resolved tickets"]);
-        fputcsv($out, ["SLA attainment", $m["slaPct"] === null ? "-" : $m["slaPct"] . "%", "Resolution, all priorities"]);
-        fputcsv($out, ["Resolved total", $m["resolvedN"], "In the selected window"]);
-        fputcsv($out, ["Reopen rate", $m["reopenPct"] === null ? "-" : $m["reopenPct"] . "%", $m["reopenedN"] . " of " . $m["resolvedN"] . " resolved"]);
-        fputcsv($out, ["Time logged", $m["timeTotal"] ? th_minutes($m["timeTotal"]) : "-", "Across the window"]);
-        fputcsv($out, ["Effort per ticket", $m["timePerTicket"] ? th_minutes($m["timePerTicket"]) : "-", "Mean across all raised"]);
+        // Every cell goes through csvRow(): a category or agent name starting
+        // with = + - @ would otherwise execute as a formula when opened in Excel.
+        $put = static function (array $cells) use ($out): void {
+            fputcsv($out, self::csvRow($cells));
+        };
+        $put(["Metric", "Value", "Detail"]);
+        $put(["Window", $m["range"] . " days", $m["ticketsInRange"] . " ticket(s) raised in window"]);
+        $put(["Median first response", $m["medianFr"] ? th_dur($m["medianFr"]) : "-", "Tickets raised in window that were answered"]);
+        $put(["Median resolution", $m["medianRes"] ? th_dur($m["medianRes"]) : "-", "Tickets resolved in window"]);
+        $put(["SLA attainment", $m["slaPct"] === null ? "-" : $m["slaPct"] . "%", "Tickets resolved in window, all priorities"]);
+        $put(["Resolved total", $m["resolvedN"], "Resolved in window (regardless of when raised)"]);
+        $put(["Reopen rate", $m["reopenPct"] === null ? "-" : $m["reopenPct"] . "%", $m["reopenedN"] . " of " . $m["resolvedN"] . " resolved in window"]);
+        $put(["Time logged", $m["timeTotal"] ? th_minutes($m["timeTotal"]) : "-", "On tickets raised in window"]);
+        $put(["Effort per ticket", $m["timePerTicket"] ? th_minutes($m["timePerTicket"]) : "-", "Mean across tickets raised in window"]);
 
-        fputcsv($out, []);
-        fputcsv($out, ["Agent", "Time logged"]);
+        $put([]);
+        $put(["Agent", "Time logged"]);
         foreach ($m["timeByAgent"] as $k => $v) {
-            fputcsv($out, [$k, th_minutes((int) $v)]);
+            $put([$k, th_minutes((int) $v)]);
         }
 
-        fputcsv($out, []);
-        fputcsv($out, ["Group", "Tickets", "Avg resolution", "SLA attainment"]);
+        $put([]);
+        $put(["Group", "Tickets raised", "Resolved in window", "Avg resolution", "SLA attainment"]);
         foreach ($m["groupPerf"] as $row) {
-            fputcsv($out, [$row["g"]["name"], $row["n"], $row["avg"] ? th_dur($row["avg"]) : "-", $row["pct"] . "%"]);
+            $put([$row["g"]["name"], $row["n"], $row["resolved"], $row["avg"] ? th_dur($row["avg"]) : "-", $row["pct"] === null ? "-" : $row["pct"] . "%"]);
         }
 
-        fputcsv($out, []);
-        fputcsv($out, ["Category", "Tickets"]);
+        $put([]);
+        $put(["Category", "Tickets raised"]);
         foreach ($m["cats"] as $k => $v) {
-            fputcsv($out, [$k, $v]);
+            $put([$k, $v]);
         }
 
-        fputcsv($out, []);
-        fputcsv($out, ["Source", "Tickets"]);
+        $put([]);
+        $put(["Source", "Tickets raised"]);
         foreach ($m["srcs"] as $k => $v) {
-            fputcsv($out, [$k, $v]);
+            $put([$k, $v]);
         }
 
         rewind($out);
@@ -64,6 +69,20 @@ class ReportsController extends BaseController
             ->setHeader("Content-Disposition", "attachment; filename=\"tickethub-reports-" . $m["range"] . "d-" . date("Ymd-His") . ".csv\"")
             ->setBody($csv);
     }
+    /** Neutralise spreadsheet formula injection: cells starting with = + - @ get a leading quote. */
+    public static function csvRow(array $cells): array
+    {
+        return array_map(static function ($v) {
+            $s = (string) $v;
+            // A lone "-" is our own "no value" marker and cannot be a formula.
+            if ($s !== '' && $s !== '-' && in_array($s[0], ['=', '+', '-', '@'], true) && ! is_numeric($s)) {
+                return "'" . $s;
+            }
+
+            return $v;
+        }, $cells);
+    }
+
     /** Every figure the reports page shows, for the selected window. */
     private function metrics(): array
     {
@@ -74,6 +93,9 @@ class ReportsController extends BaseController
         // the selected window to EVERY metric on the page (no silent fallback).
         $all     = $this->scopeTickets($this->db->table('tickets')->get()->getResultArray());
         $tickets = array_values(array_filter($all, static fn ($t) => strtotime($t['created_at']) >= $cutoff));
+        // Resolution metrics are about what got closed in the window, whenever it
+        // was raised — a 60-day-old ticket resolved yesterday belongs in this week's numbers.
+        $resolvedIn = array_values(array_filter($all, static fn ($t) => $t['resolved_at'] && strtotime($t['resolved_at']) >= $cutoff));
 
         $cats = [];
         $srcs = [];
@@ -94,15 +116,15 @@ class ReportsController extends BaseController
             if ($t['responded_at']) {
                 $frTimes[] = strtotime($t['responded_at']) - strtotime($t['created_at']);
             }
-            if ($t['resolved_at']) {
-                $resolvedN++;
-                // Counted against tickets that reached a resolution, which is what
-                // makes the ratio meaningful: how often "resolved" did not stick.
-                $reopenedN += (int) $t['reopen_count'] > 0 ? 1 : 0;
-                $resTimes[] = strtotime($t['resolved_at']) - strtotime($t['created_at']);
-                if (strtotime($t['resolved_at']) <= strtotime($t['res_due'])) {
-                    $met++;
-                }
+        }
+        foreach ($resolvedIn as $t) {
+            $resolvedN++;
+            // Counted against tickets that reached a resolution, which is what
+            // makes the ratio meaningful: how often "resolved" did not stick.
+            $reopenedN += (int) $t['reopen_count'] > 0 ? 1 : 0;
+            $resTimes[] = strtotime($t['resolved_at']) - strtotime($t['created_at']);
+            if ($t['res_due'] && strtotime($t['resolved_at']) <= strtotime($t['res_due'])) {
+                $met++;
             }
         }
         $median = static function (array $xs) {
@@ -125,19 +147,20 @@ class ReportsController extends BaseController
         $groupPerf = [];
         foreach ($visibleGroups as $g) {
             $ts = array_values(array_filter($tickets, static fn ($t) => (int) $t['group_id'] === (int) $g['id']));
-            $resolved = array_values(array_filter($ts, static fn ($t) => $t['resolved_at']));
+            $resolved = array_values(array_filter($resolvedIn, static fn ($t) => (int) $t['group_id'] === (int) $g['id']));
             $avg = 0;
             $metG = 0;
             foreach ($resolved as $t) {
                 $avg += strtotime($t['resolved_at']) - strtotime($t['created_at']);
-                if (strtotime($t['resolved_at']) <= strtotime($t['res_due'])) {
+                if ($t['res_due'] && strtotime($t['resolved_at']) <= strtotime($t['res_due'])) {
                     $metG++;
                 }
             }
             $avg = $resolved ? (int) ($avg / count($resolved)) : 0;
             $groupPerf[] = [
-                'g' => $g, 'n' => count($ts), 'avg' => $avg,
-                'pct' => $resolved ? (int) round($metG / count($resolved) * 100) : 100,
+                'g' => $g, 'n' => count($ts), 'resolved' => count($resolved), 'avg' => $avg,
+                // No resolutions means nothing to attain — null, never a flattering 100%.
+                'pct' => $resolved ? (int) round($metG / count($resolved) * 100) : null,
             ];
         }
         usort($groupPerf, static fn ($a, $b) => $b['n'] <=> $a['n']);
@@ -174,6 +197,7 @@ class ReportsController extends BaseController
             'reopenedN' => $reopenedN,
             'reopenPct' => $resolvedN ? round($reopenedN / $resolvedN * 100, 1) : null,
             'ticketsInRange' => count($tickets),
+            'resolvedInRange' => count($resolvedIn),
             'timeByAgent' => $timeByAgent, 'timeByCategory' => $timeByCategory,
             'timeTotal' => $timeTotal,
             'timePerTicket' => $tickets ? (int) round($timeTotal / count($tickets)) : 0,

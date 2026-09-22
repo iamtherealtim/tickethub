@@ -15,7 +15,8 @@
         <button type="submit" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] hover:bg-brand-50 hover:border-brand-100 hover:text-brand"><?= th_icon('check', 'w-4 h-4') ?> Yes</button></form>
       <form method="post" action="<?= site_url('portal/kb/' . $a['id'] . '/vote') ?>"><?= csrf_field() ?><input type="hidden" name="vote" value="down">
         <button type="submit" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] hover:bg-alert-50 hover:border-alert-100 hover:text-alert"><?= th_icon('x', 'w-4 h-4') ?> Not quite</button></form>
-      <a href="<?= site_url('portal/new') ?>" class="ml-auto text-[13px] text-brand font-medium hover:underline">Still stuck? Raise a ticket</a>
+      <button type="button" data-copy="<?= esc(site_url('portal/kb/' . $a['id']), 'attr') ?>" class="ml-auto inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] text-ink-500 hover:bg-canvas" title="Copy a link to this article"><?= th_icon('link', 'w-4 h-4') ?> Share</button>
+      <a href="<?= site_url('portal/new') ?>" class="text-[13px] text-brand font-medium hover:underline">Still stuck? Raise a ticket</a>
     </div>
   </article>
 </div>

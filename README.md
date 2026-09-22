@@ -1,61 +1,134 @@
-# CodeIgniter 4 Framework
+# TicketHub
 
-## What is CodeIgniter?
+TicketHub is a self-hosted IT service desk: tickets (incidents and service
+requests) with SLAs, business-hours calendars and routing rules; a self-service
+employee portal with a knowledge base and service catalog; problems, changes
+and assets; automations; email in and out (SMTP, Microsoft 365 via Graph, or a
+generic inbound webhook); Microsoft Entra ID single sign-on; a PDQ Connect
+asset import; and a small bearer-token JSON API.
 
-CodeIgniter is a PHP full-stack web framework that is light, fast, flexible and secure.
-More information can be found at the [official site](https://codeigniter.com).
+It is a single CodeIgniter 4 application backed by MySQL. No JavaScript build
+step, no queue workers, no Composer needed at runtime.
 
-This repository holds the distributable version of the framework.
-It has been built from the
-[development repository](https://github.com/codeigniter4/CodeIgniter4).
+## Requirements
 
-More information about the plans for version 4 can be found in [CodeIgniter 4](https://forum.codeigniter.com/forumdisplay.php?fid=28) on the forums.
+- PHP 8.2 or newer with the `intl`, `mbstring`, `curl`, `openssl`, `json` and
+  `mysqlnd` extensions
+- MySQL 8.0+ or MariaDB 10.6+
+- A web server that can point its document root at `public/` (Apache with
+  `mod_rewrite`, nginx, or Caddy)
+- Cron (or the Windows Task Scheduler) for the background job
+- Composer is **not** required to run the app: the framework lives in
+  `system/` and the app autoloads from `app/`. Composer is only used to
+  install PHPUnit for the test suite.
 
-You can read the [user guide](https://codeigniter.com/user_guide/)
-corresponding to the latest version of the framework.
+## Install
 
-## Important Change with index.php
+```bash
+git clone <this repo> tickethub && cd tickethub
+cp env .env                 # then edit .env (see below)
+php spark key:generate      # writes encryption.key into .env
+php spark migrate           # creates the schema (no demo data in production)
+php spark tickethub:setup --email you@company.com --name "Your Name"
+```
 
-`index.php` is no longer in the root of the project! It has been moved inside the *public* folder,
-for better security and separation of components.
+`tickethub:setup` creates the first Administrator and prints a one-time
+password; you are asked to choose your own at first sign-in. It refuses to
+run when an Administrator already exists unless you pass `--force`.
 
-This means that you should configure your web server to "point" to your project's *public* folder, and
-not to the project root. A better practice would be to configure a virtual host to point there. A poor practice would be to point your web server to the project root and expect to enter *public/...*, as the rest of your logic and the
-framework are exposed.
+For a local demo instead, leave `CI_ENVIRONMENT = development` and run
+`php spark db:seed TicketHubSeeder` — this loads fictional teams, people and
+tickets. Every seeded account signs in with the password `password` and is
+forced to change it. The seeder refuses to run in production unless
+`TICKETHUB_ALLOW_DEMO_SEED=1` is set in the environment.
 
-**Please** read the user guide for a better explanation of how CI4 works!
+To try it without a web server: `php spark serve` and open
+http://localhost:8080.
 
-## Repository Management
+## Production checklist
 
-We use GitHub issues, in our main repository, to track **BUGS** and to track approved **DEVELOPMENT** work packages.
-We use our [forum](http://forum.codeigniter.com) to provide SUPPORT and to discuss
-FEATURE REQUESTS.
+Copy `env.production.example` to `.env` and fill in the values. In short:
 
-This repository is a "distribution" one, built by our release preparation script.
-Problems with it can be raised on our forum, or as issues in the main repository.
+1. **`CI_ENVIRONMENT = production`** — turns off the debug toolbar and
+   detailed error pages, enables HTTPS-only + HSTS, marks cookies `Secure`,
+   hides the demo-login block, and blocks the demo seeder.
+2. **`app.baseURL`** — the public `https://` URL, with a trailing slash.
+3. **`encryption.key`** — run `php spark key:generate`. Without it, SMTP /
+   Entra / PDQ / webhook secrets are stored in plaintext and the Admin page
+   shows a warning.
+4. **Database** — `database.default.*` in `.env`; the DB user needs DDL rights
+   for migrations.
+5. **Web server document root = `public/`**. Never expose the project root.
+   `public/.htaccess` handles rewrites on Apache; for nginx use
+   `try_files $uri $uri/ /index.php?$args;`.
+6. **`writable/` must be writable** by the PHP user (sessions, cache, logs,
+   uploaded attachments live there):
+   `chown -R www-data:www-data writable && chmod -R ug+rwX writable`.
+7. **Cron** — the background job sends SLA warnings, runs time-based
+   automations and polls the Microsoft 365 mailbox. Every 5 minutes is plenty:
 
-## Contributing
+   ```
+   */5 * * * * cd /var/www/tickethub && php spark tickets:cron >> writable/logs/cron.log 2>&1
+   ```
 
-We welcome contributions from the community.
+8. **First admin** — `php spark tickethub:setup --email ...` (see Install).
+9. **Email** — Admin → Email settings (SMTP host, port, credentials, from
+   address). Needed for invites, password resets and notifications. Send a
+   test from the same page.
+10. **Microsoft 365 mailbox → tickets** (optional) — Admin → Email settings →
+    "Microsoft 365 mailbox": uses the Entra app registration below with the
+    application permission `Mail.ReadWrite`. Polled by the cron job.
+11. **Single sign-on** (optional) — Admin → Single sign-on. Register a Web app
+    in Entra ID with redirect URI `https://<host>/auth/azure/callback`, paste
+    tenant id (a GUID; `common`/`organizations` are accepted but let any work
+    account sign in), client id and client secret. For automatic role
+    mapping, add the **groups claim** to the ID token in the app's *Token
+    configuration* and paste the object ids of your agent and administrator
+    groups.
+12. **Inbound email webhook** (optional) — Admin → Email settings → Inbound.
+    Your mail provider POSTs to `/api/inbound-email` with the
+    `X-Inbound-Secret` header shown there.
+13. **Backups** — the MySQL database plus `writable/uploads/`.
 
-Please read the [*Contributing to CodeIgniter*](https://github.com/codeigniter4/CodeIgniter4/blob/develop/CONTRIBUTING.md) section in the development repository.
+Sessions expire after 8 hours of inactivity. Changing or resetting a password
+signs out every other browser for that account.
 
-## Server Requirements
+## API
 
-PHP version 8.2 or higher is required, with the following extensions installed:
+Create a token under Admin → Integrations → API tokens. Each token acts as
+one chosen agent/supervisor/administrator (their role and team scope apply,
+and the audit log names them), can be given an expiry in days, and is limited
+to 120 requests per minute. Tokens are shown once and stored hashed.
 
-- [intl](http://php.net/manual/en/intl.requirements.php)
-- [mbstring](http://php.net/manual/en/mbstring.installation.php)
+```
+Authorization: Bearer <token>
+Content-Type: application/json
 
-> [!WARNING]
-> - The end of life date for PHP 7.4 was November 28, 2022.
-> - The end of life date for PHP 8.0 was November 26, 2023.
-> - The end of life date for PHP 8.1 was December 31, 2025.
-> - If you are still using below PHP 8.2, you should upgrade immediately.
-> - The end of life date for PHP 8.2 will be December 31, 2026.
+GET  /api/tickets?status=Open&open=1&page=1&per_page=25
+GET  /api/tickets/INC-2101
+POST /api/tickets          {"subject": "...", "body": "...", "requester_id": 7,
+                            "priority": "High", "type": "Incident",
+                            "category": "Network", "group_id": 2}
+POST /api/tickets/INC-2101/reply   {"body": "...", "kind": "reply" | "note"}
+```
 
-Additionally, make sure that the following extensions are enabled in your PHP:
+Responses are JSON. Errors are `{"error": "..."}` with 400 (bad JSON),
+401/403 (auth), 404, 422 (validation) or 429 (rate limit). API calls never
+receive a session cookie.
 
-- json (enabled by default - don't turn it off)
-- [mysqlnd](http://php.net/manual/en/mysqlnd.install.php) if you plan to use MySQL
-- [libcurl](http://php.net/manual/en/curl.requirements.php) if you plan to use the HTTP\CURLRequest library
+## Development
+
+```bash
+composer install            # only for PHPUnit
+php spark migrate && php spark db:seed TicketHubSeeder
+php spark serve
+vendor/bin/phpunit
+```
+
+Useful commands: `php spark tickets:cron` (run the scheduler once),
+`php spark pdq:test` (check the PDQ Connect key), `php spark tickethub:setup`.
+
+## License
+
+The application code is released under the MIT license (see `LICENSE`).
+CodeIgniter is © the CodeIgniter Foundation, MIT licensed.

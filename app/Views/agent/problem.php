@@ -12,9 +12,11 @@
       <?= th_priority_tag($p['priority']) ?>
       <span class="ml-auto flex items-center gap-2">
         <?= th_btn('Edit', 'data-modal="editProblem"', 'ghost', 'edit') ?>
+        <?php if (! empty($canManage)): ?>
         <form method="post" action="<?= site_url('app/problems/' . $p['id'] . '/delete') ?>" data-confirm="Delete <?= esc($p['code'], 'attr') ?>? Linked incidents keep their history but lose the link." data-confirm-label="Delete">
           <?= csrf_field() ?><?= th_btn('Delete', 'type="submit"', 'danger', 'trash') ?>
         </form>
+        <?php endif ?>
       </span>
     </div>
     <h1 class="font-display text-[22px] font-semibold mt-2 leading-snug"><?= esc($p['title']) ?></h1>
@@ -28,7 +30,10 @@
         <p class="text-[13px] text-ink-500 leading-relaxed"><?= esc($p['cause']) ?></p></div>
       <div class="rounded-lg bg-canvas border border-line p-3">
         <div class="text-[11px] uppercase tracking-[.09em] text-faint mb-1">Workaround</div>
-        <p class="text-[13px] text-ink-500 leading-relaxed"><?= esc($p['workaround']) ?></p></div>
+        <p class="text-[13px] text-ink-500 leading-relaxed"><?= esc($p['workaround']) ?></p>
+        <?php if (! empty($article)): ?>
+        <a href="<?= site_url('app/kb/' . $article['id']) ?>" class="inline-flex items-center gap-1.5 mt-2 text-[12.5px] text-brand font-medium hover:underline"><?= th_icon('book', 'w-3.5 h-3.5') ?><?= esc($article['title']) ?><?= $article['status'] !== 'Published' ? ' <span class="text-signal">(draft)</span>' : '' ?></a>
+        <?php endif ?></div>
     </div>
   </div>
 
@@ -63,7 +68,7 @@
         <input name="title" required value="<?= esc($p['title'], 'attr') ?>" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
       <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Status</label>
         <select name="status" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px]">
-          <?php foreach (['Under investigation', 'Root cause identified', 'Resolved'] as $s): ?><option <?= $p['status'] === $s ? 'selected' : '' ?>><?= $s ?></option><?php endforeach ?>
+          <?php foreach (\App\Controllers\ProblemsController::STATUSES as $s): ?><option <?= $p['status'] === $s ? 'selected' : '' ?>><?= $s ?></option><?php endforeach ?>
         </select></div>
       <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Priority</label>
         <select name="priority" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px]">
@@ -77,6 +82,12 @@
         <textarea name="cause" rows="3" class="w-full px-2.5 py-2 rounded-lg border border-line text-[13px] leading-relaxed focus:border-brand"><?= esc($p['cause']) ?></textarea></div>
       <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Workaround</label>
         <textarea name="workaround" rows="3" class="w-full px-2.5 py-2 rounded-lg border border-line text-[13px] leading-relaxed focus:border-brand"><?= esc($p['workaround']) ?></textarea></div>
+      <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Known-error article</label>
+        <select name="kb_article_id" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px]">
+          <option value="">None</option>
+          <?php foreach ($articles as $ar): ?><option value="<?= $ar['id'] ?>" <?= (int) ($p['kb_article_id'] ?? 0) === (int) $ar['id'] ? 'selected' : '' ?>><?= esc($ar['title']) ?> — <?= esc($ar['category']) ?></option><?php endforeach ?>
+        </select>
+        <p class="text-[11.5px] text-faint mt-1">Published articles only. Shown next to the workaround so agents can send it.</p></div>
     </div>
   </form>
 </template>

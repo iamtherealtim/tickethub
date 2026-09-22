@@ -78,6 +78,7 @@
       </a>
       <?php endif ?>
 
+      <?php if (ENVIRONMENT !== 'production'): ?>
       <div class="mt-6 rounded-xl border border-line bg-white p-4">
         <div class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint mb-2">Demo accounts · password is “password”</div>
         <p class="text-[11.5px] text-faint mb-2 leading-relaxed">Seeded demo logins only. Accounts created from Admin get a random one-time password and must set their own.</p>
@@ -87,6 +88,7 @@
           <div class="flex justify-between gap-3"><span class="text-ink-500">Employee</span><span class="font-mono text-muted">jordan.whitfield@tickethub.co</span></div>
         </div>
       </div>
+      <?php endif ?>
     </div>
   </section>
 </div>

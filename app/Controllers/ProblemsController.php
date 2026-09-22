@@ -4,13 +4,24 @@ namespace App\Controllers;
 
 class ProblemsController extends BaseController
 {
+    public const STATUSES = ['Under investigation', 'Root cause identified', 'Known error', 'Resolved'];
+
+    /** Deleting a problem unlinks every incident under it, so it is supervisory. */
+    private function canManage(): bool
+    {
+        return in_array($this->me['role'] ?? '', ['Administrator', 'Supervisor'], true);
+    }
+
     public function index()
     {
         $problems = $this->db->table('problems')->orderBy('opened_at', 'DESC')->get()->getResultArray();
 
+        // Counted over the same scoped set the problem page lists, so the number
+        // on the card never promises incidents the agent then cannot see.
         $linkedCounts = [];
-        foreach ($this->db->query('SELECT problem_id, COUNT(*) n FROM tickets WHERE problem_id IS NOT NULL GROUP BY problem_id')->getResultArray() as $r) {
-            $linkedCounts[(int) $r['problem_id']] = (int) $r['n'];
+        $linkedTickets = $this->scopeTickets($this->db->table('tickets')->where('problem_id IS NOT NULL', null, false)->get()->getResultArray());
+        foreach ($linkedTickets as $t) {
+            $linkedCounts[(int) $t['problem_id']] = ($linkedCounts[(int) $t['problem_id']] ?? 0) + 1;
         }
 
         return view('agent/problems', $this->agentShared() + [
@@ -31,10 +42,17 @@ class ProblemsController extends BaseController
         // Both lists expose ticket subjects, so they follow the group scope.
         $linked = $this->scopeTickets($this->db->table('tickets')->where('problem_id', $id)->orderBy('created_at', 'DESC')->get()->getResultArray());
 
+        $article = ! empty($p['kb_article_id'])
+            ? $this->db->table('articles')->where('id', (int) $p['kb_article_id'])->get()->getRowArray()
+            : null;
+
         return view('agent/problem', $this->agentShared() + [
             'title' => $p['code'], 'nav' => 'problems',
             'p' => $p, 'linked' => $linked,
             'users' => $this->users(),
+            'canManage' => $this->canManage(),
+            'article' => $article,
+            'articles' => $this->db->table('articles')->select('id, title, category')->where('status', 'Published')->orderBy('title')->get()->getResultArray(),
         ]);
     }
 
@@ -47,13 +65,22 @@ class ProblemsController extends BaseController
 
             return redirect()->back();
         }
+        // A known error must point at a published article; anything else clears the link.
+        $kb = null;
+        if (! empty($post['kb_article_id'])) {
+            $kb = $this->db->table('articles')->where('id', (int) $post['kb_article_id'])->where('status', 'Published')->countAllResults() ? (int) $post['kb_article_id'] : null;
+            if ($kb === null) {
+                $this->toast('That article is not published, so it was not linked', 'warn');
+            }
+        }
         $this->db->table('problems')->where('id', $id)->update([
             'title' => $post['title'],
-            'status' => in_array($post['status'], ['Under investigation', 'Root cause identified', 'Resolved'], true) ? $post['status'] : $p['status'],
-            'priority' => in_array($post['priority'], ['Urgent', 'High', 'Medium', 'Low'], true) ? $post['priority'] : $p['priority'],
+            'status' => in_array($post['status'] ?? '', self::STATUSES, true) ? $post['status'] : $p['status'],
+            'priority' => in_array($post['priority'] ?? '', ['Urgent', 'High', 'Medium', 'Low'], true) ? $post['priority'] : $p['priority'],
             'owner_id' => (int) ($post['owner_id'] ?? $p['owner_id']),
-            'cause' => $post['cause'] ?: '—',
-            'workaround' => $post['workaround'] ?: 'None yet',
+            'cause' => ($post['cause'] ?? '') ?: '—',
+            'workaround' => ($post['workaround'] ?? '') ?: 'None yet',
+            'kb_article_id' => $kb,
         ]);
         $this->toast($p['code'] . ' updated');
 
@@ -62,6 +89,11 @@ class ProblemsController extends BaseController
 
     public function delete(int $id)
     {
+        if (! $this->canManage()) {
+            $this->toast('Only supervisors and administrators can delete problems', 'warn');
+
+            return redirect()->to('/app/problems/' . $id);
+        }
         $p = $this->db->table('problems')->where('id', $id)->get()->getRowArray();
         if ($p) {
             $this->db->table('tickets')->where('problem_id', $id)->update(['problem_id' => null]);
@@ -234,9 +266,10 @@ class ProblemsController extends BaseController
         $this->db->table('problems')->insert([
             'code' => 'PRB-' . str_pad((string) $n, 4, '0', STR_PAD_LEFT),
             'title' => $p['title'], 'status' => 'Under investigation',
-            'priority' => $p['priority'] ?? 'Medium', 'owner_id' => $this->me['id'],
+            'priority' => in_array($p['priority'] ?? '', ['Urgent', 'High', 'Medium', 'Low'], true) ? $p['priority'] : 'Medium',
+            'owner_id' => $this->me['id'],
             'linked' => 0, 'opened_at' => date('Y-m-d H:i:s'),
-            'cause' => '—', 'workaround' => $p['workaround'] ?: 'None yet',
+            'cause' => '—', 'workaround' => ($p['workaround'] ?? '') ?: 'None yet',
         ]);
         $this->toast('Problem raised');
 

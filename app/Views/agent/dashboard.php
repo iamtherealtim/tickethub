@@ -2,9 +2,12 @@
 <?= $this->section('content') ?>
 
 <?php
-$hour  = (int) date('G');
+// The greeting follows the display timezone, not the server clock.
+$hour  = $localHour ?? (int) th_local(time())->format('G');
 $greet = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
 $H     = 3600;
+$atRisk  = $atRisk ?? [];
+$canPost = $canPost ?? false;
 ?>
 <div class="p-5 max-w-[1400px] mx-auto fade-in">
   <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
@@ -30,9 +33,9 @@ $H     = 3600;
 
   <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-4">
     <?= th_kpi('Unassigned', count($unassigned), 'Waiting for an owner', count($unassigned) ? 'signal' : 'ink', site_url('app/tickets?view=unassigned')) ?>
-    <?= th_kpi('Open', count($openTickets), $newToday . ' new today', 'ink', site_url('app/tickets')) ?>
+    <?= th_kpi('Open', count($openTickets), $newToday . ' raised today', 'ink', site_url('app/tickets')) ?>
     <?= th_kpi('Due within 4h', count($soon4), 'Resolution SLA', 'signal', site_url('app/tickets')) ?>
-    <?= th_kpi('Past due', count($overdue), count($overdue) ? 'Breached resolution SLA' : 'All within target', count($overdue) ? 'alert' : 'brand', site_url('app/tickets?view=overdue')) ?>
+    <?= th_kpi('Past due', count($overdue), (count($overdue) ? 'Breached resolution SLA' : 'All within target') . ' · <span class="' . ($atRisk ? 'text-signal' : 'text-faint') . '">' . count($atRisk) . ' at risk</span>', count($overdue) ? 'alert' : 'brand', site_url('app/tickets?view=overdue')) ?>
     <?= th_kpi('Resolved 24h', $resolvedToday, $fcr === null ? 'No resolved tickets yet' : 'First-contact rate ' . $fcr . '%', 'brand', site_url('app/tickets?view=closed')) ?>
   </div>
 
@@ -178,15 +181,24 @@ $H     = 3600;
         $annHtml = '';
         foreach ($announcements as $a) {
             $by = $users[(int) $a['user_id']] ?? null;
-            $annHtml .= '<div class="relative rounded-lg border p-3 ' . $tone[$a['level']] . '">'
-                . '<form method="post" action="' . site_url('app/announcements/' . $a['id'] . '/delete') . '"'
-                . ' data-confirm="Remove this announcement for everyone?" data-confirm-label="Remove" class="absolute top-2 right-2">' . csrf_field()
-                . '<button type="submit" class="w-6 h-6 grid place-items-center rounded-md text-faint hover:text-alert hover:bg-white/60" title="Remove">' . th_icon('x', 'w-3.5 h-3.5') . '</button></form>'
-                . '<div class="text-[13px] font-semibold text-ink pr-6">' . esc($a['title']) . '</div>'
+            // Edit and remove are supervisory; everyone else just reads.
+            $controls = $canPost
+                ? '<span class="absolute top-2 right-2 flex items-center gap-0.5">'
+                    . '<button type="button" data-modal="editAnnouncement-' . $a['id'] . '" class="w-6 h-6 grid place-items-center rounded-md text-faint hover:text-ink hover:bg-white/60" title="Edit">' . th_icon('edit', 'w-3.5 h-3.5') . '</button>'
+                    . '<form method="post" action="' . site_url('app/announcements/' . $a['id'] . '/delete') . '"'
+                    . ' data-confirm="Remove this announcement for everyone?" data-confirm-label="Remove">' . csrf_field()
+                    . '<button type="submit" class="w-6 h-6 grid place-items-center rounded-md text-faint hover:text-alert hover:bg-white/60" title="Remove">' . th_icon('x', 'w-3.5 h-3.5') . '</button></form></span>'
+                : '';
+            $annHtml .= '<div class="relative rounded-lg border p-3 ' . ($tone[$a['level']] ?? $tone['info']) . '">' . $controls
+                . '<div class="text-[13px] font-semibold text-ink pr-12">' . esc($a['title']) . '</div>'
                 . '<p class="text-[12.5px] text-muted mt-1 leading-relaxed">' . esc($a['body']) . '</p>'
-                . '<div class="text-[11px] text-faint mt-2">' . esc($by['name'] ?? '—') . ' · ' . th_rel($a['created_at']) . '</div></div>';
+                . '<div class="text-[11px] text-faint mt-2">' . esc($by['name'] ?? '—') . ' · ' . th_rel($a['created_at'])
+                . (! empty($a['expires_at']) ? ' · expires ' . th_day($a['expires_at']) : '') . '</div></div>';
         }
-        echo th_card(th_card_head('Announcements', th_btn('Post', 'data-modal="newAnnouncement"', 'ghost', 'plus'))
+        if (! $annHtml) {
+            $annHtml = '<p class="text-[13px] text-muted text-center py-4">Nothing posted right now.</p>';
+        }
+        echo th_card(th_card_head('Announcements', $canPost ? th_btn('Post', 'data-modal="newAnnouncement"', 'ghost', 'plus') : '')
             . '<div class="p-4 space-y-2.5">' . $annHtml . '</div>');
       ?>
     </div>
@@ -205,9 +217,32 @@ $H     = 3600;
         <select name="level" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px]">
           <option value="info">Information</option><option value="warn">Warning</option><option value="alert">Urgent</option>
         </select></div>
+      <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Expires</label>
+        <input name="expires_at" type="date" min="<?= th_local(time())->format('Y-m-d') ?>" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] font-mono focus:border-brand">
+        <p class="text-[11.5px] text-faint mt-1">Optional — hidden after this day.</p></div>
       <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Message<span class="text-alert"> *</span></label>
         <textarea name="body" rows="4" required placeholder="What is happening, who it affects, and what people should do." class="w-full px-2.5 py-2 rounded-lg border border-line text-[13px] leading-relaxed focus:border-brand"></textarea></div>
     </div>
   </form>
 </template>
+<?php if ($canPost): foreach ($announcements as $a): ?>
+<template id="tpl-editAnnouncement-<?= $a['id'] ?>">
+  <form method="post" action="<?= site_url('app/announcements/' . $a['id']) ?>" data-modal-title="Edit announcement" data-submit="Save">
+    <?= csrf_field() ?>
+    <div class="grid sm:grid-cols-2 gap-3.5">
+      <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Headline<span class="text-alert"> *</span></label>
+        <input name="title" required value="<?= esc($a['title'], 'attr') ?>" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
+      <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Severity</label>
+        <select name="level" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px]">
+          <?php foreach (['info' => 'Information', 'warn' => 'Warning', 'alert' => 'Urgent'] as $lv => $ll): ?><option value="<?= $lv ?>" <?= $a['level'] === $lv ? 'selected' : '' ?>><?= $ll ?></option><?php endforeach ?>
+        </select></div>
+      <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Expires</label>
+        <input name="expires_at" type="date" value="<?= ! empty($a['expires_at']) ? th_local($a['expires_at'])->format('Y-m-d') : '' ?>" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] font-mono focus:border-brand">
+        <p class="text-[11.5px] text-faint mt-1">Clear it to keep the notice until removed.</p></div>
+      <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Message<span class="text-alert"> *</span></label>
+        <textarea name="body" rows="4" required class="w-full px-2.5 py-2 rounded-lg border border-line text-[13px] leading-relaxed focus:border-brand"><?= esc($a['body']) ?></textarea></div>
+    </div>
+  </form>
+</template>
+<?php endforeach; endif ?>
 <?= $this->endSection() ?>

@@ -68,13 +68,21 @@ class TicketsApiController extends BaseController
     public function create()
     {
         $in = $this->json();
-        if (! is_array($in) || empty($in['subject']) || empty($in['body'])) {
+        if ($in === null) {
+            return $this->fail('Invalid JSON body', 400);
+        }
+        if (empty($in['subject']) || empty($in['body'])) {
             return $this->fail('subject and body are required', 422);
         }
 
         $requesterId = (int) ($in['requester_id'] ?? 0);
         if ($requesterId && ! $this->db->table('users')->where('id', $requesterId)->where('active', 1)->countAllResults()) {
             return $this->fail('requester_id does not match an active user', 422);
+        }
+
+        $groupId = isset($in['group_id']) && $in['group_id'] !== '' && $in['group_id'] !== null ? (int) $in['group_id'] : null;
+        if ($groupId !== null && ! $this->db->table('groups')->where('id', $groupId)->countAllResults()) {
+            return $this->fail('group_id does not match a group', 422);
         }
 
         $t = $this->createTicket([
@@ -87,7 +95,7 @@ class TicketsApiController extends BaseController
             'type'         => $this->pick($in['type'] ?? null, ['Incident', 'Service request'], 'Incident'),
             'category'     => $this->pick($in['category'] ?? null, TH_CATEGORIES, 'Software'),
             'source'       => 'API',
-            'group_id'     => isset($in['group_id']) ? (int) $in['group_id'] : null,
+            'group_id'     => $groupId,
         ]);
 
         \App\Libraries\Audit::log('api.ticket_created', $t['code']);
@@ -105,7 +113,10 @@ class TicketsApiController extends BaseController
         if (! $t) {
             return $this->fail('Ticket not found', 404);
         }
-        $in   = $this->json();
+        $in = $this->json();
+        if ($in === null) {
+            return $this->fail('Invalid JSON body', 400);
+        }
         $body = trim((string) ($in['body'] ?? ''));
         if ($body === '') {
             return $this->fail('body is required', 422);
@@ -126,6 +137,9 @@ class TicketsApiController extends BaseController
             $upd['status'] = 'Open';
         }
         $this->db->table('tickets')->where('id', $t['id'])->update(th_status_change($t, $upd));
+        if ($kind === 'reply') {
+            \App\Libraries\TicketIntake::notifyReply(array_merge($t, $upd), (int) $this->me['id'], (string) $this->me['name']);
+        }
 
         if ($kind === 'reply') {
             $this->notify('Public reply sent', array_merge($t, $upd), ['message' => $body]);
@@ -162,11 +176,22 @@ class TicketsApiController extends BaseController
         ];
     }
 
-    private function json(): array
+    /**
+     * Decoded request body, or null when the caller sent JSON that does not parse.
+     * Form-encoded callers are tolerated too; the shape is identical either way.
+     */
+    private function json(): ?array
     {
-        $body = $this->request->getJSON(true);
+        try {
+            $body = $this->request->getJSON(true);
+        } catch (\Throwable $e) {
+            return null;
+        }
+        if ($body === null && trim((string) $this->request->getBody()) !== ''
+            && str_contains(strtolower($this->request->getHeaderLine('Content-Type')), 'json')) {
+            return null; // e.g. a bare "null" or a body the framework declined to parse
+        }
 
-        // Tolerate form-encoded callers too; the shape is identical either way.
         return is_array($body) ? $body : (array) $this->request->getPost();
     }
 

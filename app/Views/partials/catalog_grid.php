@@ -13,7 +13,36 @@ $list = array_values(array_filter($items, static fn ($c) => $cat === 'All' || $c
     <?= $on ? 'bg-ink text-white border-ink' : 'bg-white text-muted border-line hover:text-ink' ?>"><?= esc($c) ?></a>
   <?php endforeach ?>
 </div>
-<?php $editable = $editable ?? false; ?>
+<?php
+$editable = $editable ?? false;
+// A stored field entry is only rendered when it has the bits the form needs;
+// anything malformed (hand-typed JSON from before validation) is skipped, not fatal.
+$safeFields = static function (?string $json): array {
+    $fields = json_decode((string) $json, true);
+    if (! is_array($fields)) {
+        return [];
+    }
+    $out = [];
+    foreach ($fields as $f) {
+        if (! is_array($f) || ! isset($f['k'], $f['label']) || ! is_scalar($f['k']) || ! is_scalar($f['label']) || trim((string) $f['k']) === '') {
+            continue;
+        }
+        $type = isset($f['type']) && is_scalar($f['type']) ? strtolower((string) $f['type']) : 'text';
+        $opts = $f['options'] ?? $f['opts'] ?? [];
+        $out[] = [
+            'k' => (string) $f['k'], 'label' => (string) $f['label'],
+            'type' => in_array($type, ['text', 'select', 'textarea', 'date', 'number'], true) ? $type : 'text',
+            'options' => is_array($opts) ? array_values(array_filter($opts, 'is_scalar')) : [],
+            'required' => filter_var($f['required'] ?? false, FILTER_VALIDATE_BOOLEAN),
+        ];
+    }
+
+    return $out;
+};
+?>
+<?php if (! $list): ?>
+  <?= th_card(th_empty('layers', $items ? 'Nothing in this category' : 'The catalog is empty', $items ? 'Pick another category above.' : ($editable ? 'Add the first item people can request.' : 'Nothing can be requested yet — raise a ticket instead.'), $editable && ! $items ? th_btn('Add item', 'data-modal="addCatalog"', 'brand', 'plus') : '')) ?>
+<?php endif ?>
 <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
   <?php foreach ($list as $c): ?>
   <button data-modal="catalog-<?= $c['id'] ?>" class="relative text-left bg-white border border-line rounded-xl shadow-card p-4 hover:border-brand-100 hover:shadow-pop transition group">
@@ -32,7 +61,7 @@ $list = array_values(array_filter($items, static fn ($c) => $cat === 'All' || $c
   <?php endforeach ?>
 </div>
 
-<?php foreach ($items as $c): $fields = json_decode($c['fields'] ?? '[]', true) ?: []; ?>
+<?php foreach ($items as $c): $fields = $safeFields($c['fields'] ?? '[]'); ?>
 <template id="tpl-catalog-<?= $c['id'] ?>">
   <form method="post" action="<?= $requestUrlFn((int) $c['id']) ?>" data-modal-title="<?= esc($c['name'], 'attr') ?>"
         data-modal-sub="<?= esc($c['sla'] . ' · ' . ($c['approval'] === 'None' ? 'No approval needed' : $c['approval'] . ' approval required'), 'attr') ?>"
@@ -45,17 +74,18 @@ $list = array_values(array_filter($items, static fn ($c) => $cat === 'All' || $c
           <?php foreach ($requesters as $u): ?><option value="<?= $u['id'] ?>"><?= esc($u['name']) ?> — <?= esc($u['dept']) ?></option><?php endforeach ?>
         </select></div>
       <?php endif ?>
-      <?php foreach ($fields as $f): $half = ($f['type'] ?? 'text') !== 'textarea'; ?>
+      <?php foreach ($fields as $f): $half = $f['type'] !== 'textarea'; $req = $f['required'] ? ' required' : ''; ?>
       <div class="<?= $half ? '' : 'sm:col-span-2' ?>">
-        <label class="block text-[12px] font-medium text-ink-500 mb-1.5"><?= esc($f['label']) ?></label>
-        <?php if (($f['type'] ?? '') === 'select'): ?>
-        <select name="<?= esc($f['k'], 'attr') ?>" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px]">
-          <?php foreach ($f['opts'] ?? [] as $o): ?><option><?= esc($o) ?></option><?php endforeach ?>
+        <label class="block text-[12px] font-medium text-ink-500 mb-1.5"><?= esc($f['label']) ?><?= $f['required'] ? '<span class="text-alert"> *</span>' : '' ?></label>
+        <?php if ($f['type'] === 'select'): ?>
+        <select name="<?= esc($f['k'], 'attr') ?>"<?= $req ?> class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px]">
+          <?php if (! $f['required']): ?><option value="">—</option><?php endif ?>
+          <?php foreach ($f['options'] as $o): ?><option><?= esc($o) ?></option><?php endforeach ?>
         </select>
-        <?php elseif (($f['type'] ?? '') === 'textarea'): ?>
-        <textarea name="<?= esc($f['k'], 'attr') ?>" rows="3" class="w-full px-2.5 py-2 rounded-lg border border-line text-[13px] leading-relaxed focus:border-brand"></textarea>
+        <?php elseif ($f['type'] === 'textarea'): ?>
+        <textarea name="<?= esc($f['k'], 'attr') ?>" rows="3"<?= $req ?> class="w-full px-2.5 py-2 rounded-lg border border-line text-[13px] leading-relaxed focus:border-brand"></textarea>
         <?php else: ?>
-        <input name="<?= esc($f['k'], 'attr') ?>" type="<?= ($f['type'] ?? 'text') === 'date' ? 'date' : 'text' ?>" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand">
+        <input name="<?= esc($f['k'], 'attr') ?>" type="<?= in_array($f['type'], ['date', 'number'], true) ? $f['type'] : 'text' ?>"<?= $req ?> class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand">
         <?php endif ?>
       </div>
       <?php endforeach ?>
@@ -95,7 +125,7 @@ $list = array_values(array_filter($items, static fn ($c) => $cat === 'All' || $c
           . '<textarea name="fields" rows="5" class="w-full px-2.5 py-2 rounded-lg border border-line text-[12px] font-mono leading-relaxed focus:border-brand">'
           . esc($c ? json_encode(json_decode($c['fields'] ?? '[]', true) ?: [], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : '[]')
           . '</textarea>'
-          . '<p class="text-[11.5px] text-faint mt-1">Array of <code class="font-mono">{"k","label","type"(text|select|textarea|date),"opts"[]}</code>. Leave <code class="font-mono">[]</code> for none.</p></div>'
+          . '<p class="text-[11.5px] text-faint mt-1">Array of <code class="font-mono">{"k":"slug","label":"…","type":"text|select|textarea|date|number","required":false,"options":[…]}</code> — <code class="font-mono">options</code> only for select. Leave <code class="font-mono">[]</code> for none.</p></div>'
           . '</div>';
 
       return $html;

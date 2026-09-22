@@ -22,11 +22,13 @@
         <form method="post" action="<?= site_url('app/assets/' . $a['id'] . '/ticket') ?>">
           <?= csrf_field() ?><?= th_btn('Raise a ticket', 'type="submit"', 'solid', 'plus') ?>
         </form>
+        <?php if (! empty($canManage)): ?>
         <form method="post" action="<?= site_url('app/assets/' . $a['id'] . '/delete') ?>"
               data-confirm="Delete <?= esc($a['tag'], 'attr') ?>? Ticket links to it are removed too."
               data-confirm-label="Delete" data-confirm-title="Delete this asset?">
           <?= csrf_field() ?><?= th_btn('Delete', 'type="submit"', 'danger', 'trash') ?>
         </form>
+        <?php endif ?>
       </span>
     </div>
 

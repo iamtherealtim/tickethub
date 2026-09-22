@@ -16,8 +16,14 @@ class DashboardController extends BaseController
 
             return $r > 0 && $r <= 4 * 3600;
         }));
+        // At risk: still open, past the 75% SLA warning mark but not yet breached.
+        $atRisk = array_values(array_filter($open, static fn ($t) => th_sla($t)['state'] === 'warn'));
+
+        // "Today" is the display timezone's day, not the server's UTC day.
+        $tz = th_tz();
+        $todayStart = (new \DateTime('today', $tz))->getTimestamp();
         $resolvedToday = count(array_filter($tickets, static fn ($t) => $t['resolved_at'] && (time() - strtotime($t['resolved_at'])) < 24 * 3600));
-        $newToday      = count(array_filter($tickets, static fn ($t) => $t['status'] === 'New'));
+        $newToday      = count(array_filter($tickets, static fn ($t) => strtotime($t['created_at']) >= $todayStart));
 
         // First-contact resolution: resolved tickets that took a single agent reply.
         $resolvedAll = array_values(array_filter($tickets, static fn ($t) => $t['resolved_at']));
@@ -44,14 +50,17 @@ class DashboardController extends BaseController
         }));
         usort($soon12, static fn ($a, $b) => strtotime($a['res_due']) <=> strtotime($b['res_due']));
 
-        // Volume chart: created / resolved per day, last 7 days
+        // Volume chart: created / resolved per day, last 7 days, with day
+        // boundaries drawn in the display timezone (DST-safe via DateTime).
         $volume = [];
         for ($i = 6; $i >= 0; $i--) {
-            $dayStart = strtotime(date('Y-m-d 00:00:00', time() - $i * 86400));
-            $dayEnd   = $dayStart + 86400;
+            $day      = new \DateTime('today', $tz);
+            $day->modify('-' . $i . ' days');
+            $dayStart = $day->getTimestamp();
+            $dayEnd   = (clone $day)->modify('+1 day')->getTimestamp();
             $created  = count(array_filter($tickets, static fn ($t) => strtotime($t['created_at']) >= $dayStart && strtotime($t['created_at']) < $dayEnd));
             $resolved = count(array_filter($tickets, static fn ($t) => $t['resolved_at'] && strtotime($t['resolved_at']) >= $dayStart && strtotime($t['resolved_at']) < $dayEnd));
-            $volume[] = ['day' => date('D', $dayStart), 'created' => $created, 'resolved' => $resolved];
+            $volume[] = ['day' => $day->format('D'), 'created' => $created, 'resolved' => $resolved];
         }
 
         // Workload per active agent (scoped to the viewer's group unless admin)
@@ -79,13 +88,19 @@ class DashboardController extends BaseController
         usort($mine, static fn ($a, $b) => strtotime($a['res_due']) <=> strtotime($b['res_due']));
         usort($unassigned, static fn ($a, $b) => strtotime($a['res_due']) <=> strtotime($b['res_due']));
 
-        $announcements = $this->db->table('announcements')->orderBy('created_at', 'DESC')->get()->getResultArray();
+        // Expired notices drop off on their own; no expiry means "until removed".
+        $announcements = $this->db->table('announcements')
+            ->groupStart()->where('expires_at', null)->orWhere('expires_at >', date('Y-m-d H:i:s'))->groupEnd()
+            ->orderBy('created_at', 'DESC')->get()->getResultArray();
 
         return view('agent/dashboard', $this->agentShared() + [
             'title' => 'Dashboard', 'nav' => 'dashboard',
             'users' => $this->users(),
             'openTickets' => $open, 'unassigned' => $unassigned, 'overdue' => $late,
             'soon4' => $soon4, 'soon12' => $soon12, 'resolvedToday' => $resolvedToday, 'newToday' => $newToday,
+            'atRisk' => $atRisk,
+            'localHour' => (int) (new \DateTime('now', $tz))->format('G'),
+            'canPost' => in_array($this->me['role'] ?? '', ['Administrator', 'Supervisor'], true),
             'fcr' => $fcr,
             'volume' => $volume, 'workload' => $workload,
             'rated' => $rated, 'csatAvg' => $avg, 'csatDist' => $dist,

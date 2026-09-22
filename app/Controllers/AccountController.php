@@ -38,6 +38,7 @@ class AccountController extends BaseController
             ]);
             // A password change must evict remembered devices and stale sessions.
             $this->invalidateOtherSessions();
+            $this->bumpSessionEpoch();
             Audit::log('password.changed', $this->me['email']);
             $this->toast('Password changed — other devices have been signed out');
 
@@ -45,5 +46,16 @@ class AccountController extends BaseController
         }
 
         return redirect()->back();
+    }
+
+    /**
+     * Sign out every other session for this account (see App\Filters\SessionEpoch)
+     * while keeping this one: the new epoch is written into the current session.
+     */
+    private function bumpSessionEpoch(): void
+    {
+        $this->db->table('users')->where('id', $this->me['id'])->set('session_epoch', 'session_epoch + 1', false)->update();
+        $row = $this->db->table('users')->select('session_epoch')->where('id', $this->me['id'])->get()->getRowArray();
+        $this->session->set('session_epoch', (int) ($row['session_epoch'] ?? 0));
     }
 }

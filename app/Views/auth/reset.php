@@ -23,12 +23,12 @@
       <?= csrf_field() ?>
       <div>
         <label class="block text-[12px] font-medium text-ink-500 mb-1.5">New password</label>
-        <input name="password" type="password" required minlength="8" autofocus
+        <input name="password" type="password" required minlength="12" autofocus
           class="w-full h-10 px-3 rounded-lg border border-line bg-white text-[14px] focus:border-brand">
       </div>
       <div>
         <label class="block text-[12px] font-medium text-ink-500 mb-1.5">Repeat it</label>
-        <input name="confirm" type="password" required minlength="8"
+        <input name="confirm" type="password" required minlength="12"
           class="w-full h-10 px-3 rounded-lg border border-line bg-white text-[14px] focus:border-brand">
       </div>
       <button type="submit" class="w-full h-10 rounded-lg bg-brand hover:bg-brand-600 text-white text-[14px] font-semibold transition">Set password</button>

@@ -31,6 +31,17 @@ foreach ($hours as $h) {
     <h1 class="font-display text-[22px] font-semibold text-ink">Admin</h1>
     <p class="text-[13px] text-muted mt-1">Configuration for the whole service desk</p>
   </div>
+  <?php if (! \App\Libraries\Settings::encryptionAvailable()): ?>
+  <div class="mb-4 rounded-xl border border-alert/40 bg-alert/5 px-4 py-3 text-[13px] text-ink flex items-start gap-2.5">
+    <span class="text-alert mt-0.5"><?= th_icon('shield', 'w-4 h-4') ?></span>
+    <div><b>Set encryption.key in .env to encrypt stored secrets.</b>
+      <span class="text-muted">SMTP password, Entra client secret, PDQ API key and the inbound webhook secret are currently saved in plaintext. Run <code class="font-mono text-[12px]">php spark key:generate</code>, then re-save each secret.</span></div>
+  </div>
+  <?php elseif ($plaintextSecrets = \App\Libraries\Settings::plaintextSecrets()): ?>
+  <div class="mb-4 rounded-xl border border-line bg-canvas px-4 py-3 text-[13px] text-muted">
+    Encryption is on, but these were saved before the key existed and are still plaintext: <span class="font-mono text-[12px]"><?= esc(implode(', ', $plaintextSecrets)) ?></span>. Re-save them to encrypt.
+  </div>
+  <?php endif ?>
 
   <div class="grid lg:grid-cols-[210px_1fr] gap-4 items-start">
     <section class="bg-white border border-line rounded-xl shadow-card">
@@ -452,6 +463,13 @@ foreach ($hours as $h) {
             . '<div class="mt-1.5">Header <code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5">X-Inbound-Secret: ' . esc($settings['inbound_email_secret'] ?? '') . '</code></div>'
             . '<div class="mt-1.5">JSON body: <code class="font-mono text-[11.5px]">{"from","subject","text"}</code>. A subject containing an existing INC-/SR- code appends a reply (and reopens if needed); anything else opens a new incident for the matched sender.</div>'
             . '</div>'
+            . '<div class="grid sm:grid-cols-2 gap-3">'
+            . '<label class="block"><span class="block text-[12px] font-medium text-ink-500 mb-1">Unknown senders</span>'
+            . th_select('inbound_unknown_policy', (string) ($settings['inbound_unknown_policy'] ?? 'create'), [['create', 'Create a requester account'], ['drop', 'Drop the message (logged)']]) . '</label>'
+            . '<label class="block"><span class="block text-[12px] font-medium text-ink-500 mb-1">Reopen window (days)</span>'
+            . '<input type="number" min="0" max="365" name="inbound_reopen_days" value="' . esc((string) ($settings['inbound_reopen_days'] ?? '5'), 'attr') . '" class="' . $inputCls . '">'
+            . '<span class="block text-[11.5px] text-faint mt-1">Replies to tickets resolved longer ago than this open a new linked ticket.</span></label>'
+            . '</div>'
             . '<div class="flex items-center gap-2">'
             . '<button type="submit" class="h-9 px-3.5 rounded-lg bg-brand hover:bg-brand-600 text-white text-[13px] font-semibold">Save</button>'
             . '<button type="submit" name="regenerate" value="1" class="h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium text-ink-500 hover:bg-canvas">Save &amp; regenerate secret</button>'
@@ -466,9 +484,11 @@ foreach ($hours as $h) {
         $tokenRows = '';
         foreach ($apiTokens as $tk) {
             $revoked = (bool) $tk['revoked_at'];
+            $expired = ! $revoked && ! empty($tk['expires_at']) && strtotime($tk['expires_at']) < time();
             $tokenRows .= '<div class="flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-line last:border-0">'
-                . '<span class="flex-1 min-w-0"><span class="block text-[13px] font-medium ' . ($revoked ? 'text-faint line-through' : 'text-ink') . ' truncate">' . esc($tk['name']) . '</span>'
-                . '<span class="block text-[11.5px] text-faint">acts as ' . esc($tk['who']) . ' · created ' . th_day($tk['created_at']) . '</span></span>'
+                . '<span class="flex-1 min-w-0"><span class="block text-[13px] font-medium ' . ($revoked || $expired ? 'text-faint line-through' : 'text-ink') . ' truncate">' . esc($tk['name']) . '</span>'
+                . '<span class="block text-[11.5px] text-faint">acts as ' . esc($tk['who']) . ' · created ' . th_day($tk['created_at'])
+                . (! empty($tk['expires_at']) ? ' · ' . ($expired ? 'expired ' : 'expires ') . th_day($tk['expires_at']) : ' · never expires') . '</span></span>'
                 . '<span class="w-[150px] text-[12px] text-muted">' . ($tk['last_used_at'] ? 'used ' . th_rel($tk['last_used_at']) : 'never used') . '</span>'
                 . ($revoked
                     ? '<span class="w-[86px] text-right text-[12px] text-faint">revoked</span>'
@@ -483,7 +503,7 @@ foreach ($hours as $h) {
         }
 
         echo th_card(
-            th_card_head('API tokens', '<span class="text-muted">Bearer auth · acts as the creator</span>')
+            th_card_head('API tokens', '<span class="text-muted">Bearer auth · acts as the chosen user</span>')
             . ($freshToken
                 ? '<div class="px-4 py-3 bg-brand-50 border-b border-brand-100">'
                   . '<div class="text-[12px] font-semibold text-brand mb-1">Copy this now — it is not stored and cannot be shown again</div>'
@@ -491,12 +511,19 @@ foreach ($hours as $h) {
                 : '')
             . '<form method="post" action="' . site_url('app/admin/tokens') . '" class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line">' . csrf_field()
             . '<input name="name" required placeholder="What will use this? e.g. Monitoring bridge" class="flex-1 min-w-[220px] h-8 px-2.5 rounded-lg border border-line text-[12.5px] placeholder:text-faint focus:border-brand">'
+            . '<select name="user_id" required title="The token acts as this person" class="h-8 px-2 rounded-lg border border-line bg-white text-[12.5px] min-w-[180px]">'
+            . '<option value="">Acts as…</option>'
+            . implode('', array_map(static fn ($a) => (int) $a['active']
+                ? '<option value="' . (int) $a['id'] . '"' . ((int) $a['id'] === (int) $me['id'] ? ' selected' : '') . '>' . esc($a['name']) . ' · ' . esc($a['role']) . '</option>'
+                : '', $agents))
+            . '</select>'
+            . '<input name="expires_days" type="number" min="1" max="3650" step="1" placeholder="Expires in days (blank = never)" title="Days until the token stops working; leave blank for no expiry" class="w-[230px] h-8 px-2.5 rounded-lg border border-line text-[12.5px] placeholder:text-faint focus:border-brand">'
             . '<button type="submit" class="h-8 px-3 rounded-lg bg-brand hover:bg-brand-600 text-white text-[12.5px] font-semibold">Create token</button></form>'
             . '<div class="px-4 py-2.5 bg-canvas border-b border-line text-[12px] text-muted">'
             . 'Send as <code class="font-mono">Authorization: Bearer &lt;token&gt;</code>. '
             . 'Endpoints: <code class="font-mono">GET/POST /api/tickets</code>, <code class="font-mono">GET /api/tickets/{code}</code>, '
             . '<code class="font-mono">POST /api/tickets/{code}/reply</code>. '
-            . 'A call sees exactly what its owner would see.</div>'
+            . 'A call sees exactly what the person it acts as would see. Limit: 120 requests per minute per token.</div>'
             . $tokenRows
         );
       ?>
@@ -592,7 +619,7 @@ foreach ($hours as $h) {
 
             . '<div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Directory (tenant) ID</label>'
             . '<input name="azure_tenant_id" value="' . esc($settings['azure_tenant_id'] ?? '', 'attr') . '" placeholder="00000000-0000-0000-0000-000000000000" class="' . $inputCls . ' font-mono text-[12px]">'
-            . '<p class="text-[11.5px] text-faint mt-1">Leave blank to accept any work or school account.</p></div>'
+            . '<p class="text-[11.5px] text-faint mt-1">Required. Use your directory GUID so tokens are pinned to your tenant. <code class="font-mono">common</code> or <code class="font-mono">organizations</code> also work but let any work or school account sign in — keep auto-provisioning off if you use them.</p></div>'
             . '<div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Application (client) ID</label>'
             . '<input name="azure_client_id" value="' . esc($settings['azure_client_id'] ?? '', 'attr') . '" class="' . $inputCls . ' font-mono text-[12px]"></div>'
 
@@ -602,7 +629,14 @@ foreach ($hours as $h) {
             . '<label class="sm:col-span-2 flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">'
             . '<input type="checkbox" name="azure_autoprovision" value="1" ' . (($settings['azure_autoprovision'] ?? '1') === '1' ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line">'
             . '<span class="text-[13px] font-medium text-ink">Create an account on first sign-in</span>'
-            . '<span class="text-[12px] text-muted">— new people join as Requesters; promote them under Agents &amp; roles</span></label>'
+            . '<span class="text-[12px] text-muted">— new people join as Requesters unless a group below matches; promote them under Agents &amp; roles</span></label>'
+
+            . '<div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Agent group (object id)</label>'
+            . '<input name="sso_agent_group" value="' . esc($settings['sso_agent_group'] ?? '', 'attr') . '" placeholder="00000000-0000-0000-0000-000000000000" class="' . $inputCls . ' font-mono text-[12px]">'
+            . '<p class="text-[11.5px] text-faint mt-1">Members sign in as Agents.</p></div>'
+            . '<div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Administrator group (object id)</label>'
+            . '<input name="sso_admin_group" value="' . esc($settings['sso_admin_group'] ?? '', 'attr') . '" placeholder="00000000-0000-0000-0000-000000000000" class="' . $inputCls . ' font-mono text-[12px]">'
+            . '<p class="text-[11.5px] text-faint mt-1">Members sign in as Administrators. With either group set, everyone else becomes a Requester on their next Microsoft sign-in (Supervisors and the last Administrator are never demoted).</p></div>'
 
             . '<div class="sm:col-span-2 rounded-lg border border-line bg-canvas p-3">'
             . '<div class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint mb-1.5">App registration checklist</div>'
@@ -611,6 +645,7 @@ foreach ($hours as $h) {
             . '<li>Add a <b>Web</b> redirect URI: <code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5 select-all">' . site_url('auth/azure/callback') . '</code></li>'
             . '<li>Certificates &amp; secrets → new client secret → paste its <b>Value</b> above.</li>'
             . '<li>API permissions: <span class="font-mono text-[11.5px]">User.Read</span> (delegated) — granted by default.</li>'
+            . '<li>For role mapping: Token configuration → Add groups claim → <b>Security groups</b>, emitted as <b>Group ID</b> in the ID token.</li>'
             . '</ol></div>'
 
             . '</div>'
@@ -715,7 +750,7 @@ $dangerDelete = static function (string $action, string $confirm, string $label 
 <?php endforeach ?>
 
 <template id="tpl-addPerson">
-  <form method="post" action="<?= site_url('app/admin/people') ?>" data-modal-title="Add a person" data-modal-sub="They sign in with the temporary password &ldquo;password&rdquo;" data-submit="Add person">
+  <form method="post" action="<?= site_url('app/admin/people') ?>" data-modal-title="Add a person" data-modal-sub="They get a random one-time password (emailed if SMTP is set up, otherwise shown to you once) and must choose their own at first sign-in" data-submit="Add person">
     <?= csrf_field() ?>
     <div class="grid sm:grid-cols-2 gap-3.5">
       <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Full name<span class="text-alert"> *</span></label>

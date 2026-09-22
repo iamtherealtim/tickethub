@@ -121,7 +121,9 @@ class Mailer
 
     /**
      * Send the template bound to a trigger event for a ticket.
-     * $extra: ['message' => reply body] etc.
+     * $extra: ['message' => reply body] etc. $extra['to'] (list of addresses)
+     * replaces the template's own addressing — escalation, for one, goes to the
+     * group's supervisors rather than whoever the template names.
      */
     public static function sendTemplate(string $trigger, array $ticket, array $requester, ?array $agent, array $extra = []): void
     {
@@ -136,10 +138,10 @@ class Mailer
 
         // Watchers are copied on every ticket notification regardless of who the
         // template addresses — that is the whole point of watching.
-        $to = array_values(array_unique(array_merge(
-            self::recipients($tpl, $ticket, $requester, $agent),
+        $to = array_values(array_unique(array_filter(array_merge(
+            isset($extra['to']) ? (array) $extra['to'] : self::recipients($tpl, $ticket, $requester, $agent),
             self::watchers((int) ($ticket['id'] ?? 0))
-        )));
+        ))));
         if (! $to) {
             return;
         }

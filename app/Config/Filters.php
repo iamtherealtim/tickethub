@@ -30,6 +30,7 @@ class Filters extends BaseFilters
         'adminAuth'     => \App\Filters\AdminAuth::class,
         'apiAuth'       => \App\Filters\ApiAuth::class,
         'mustChangePw'  => \App\Filters\MustChangePassword::class,
+        'sessionEpoch'  => \App\Filters\SessionEpoch::class,
         'csrf'          => CSRF::class,
         'toolbar'       => DebugToolbar::class,
         'honeypot'      => Honeypot::class,
@@ -79,12 +80,15 @@ class Filters extends BaseFilters
         'before' => [
             // 'honeypot',
             'csrf' => ['except' => ['api/*']],
+            // A password change/reset bumps users.session_epoch; sessions minted
+            // before that are signed out on their next request.
+            'sessionEpoch' => ['except' => ['api/*']],
             'mustChangePw' => ['except' => ['login', 'logout', 'forgot', 'reset/*', 'auth/*', 'api/*', 'assets/*']],
             // 'invalidchars',
         ],
         'after' => [
             // 'honeypot',
-            // 'secureheaders',
+            'secureheaders',
         ],
     ];
 

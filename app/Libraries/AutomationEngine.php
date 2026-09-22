@@ -46,25 +46,70 @@ class AutomationEngine
         if (! $rules) {
             return $out;
         }
-        $tickets = $this->db->table('tickets')->get()->getResultArray();
+        // Open tickets are the working set. Closed history is only loaded for a
+        // rule whose conditions actually look at closed tickets (auto-close after
+        // N days resolved, "status equals Closed"...), and only once.
+        $open   = $this->db->table('tickets')->whereIn('status', TH_OPEN_STATES)->get()->getResultArray();
+        $closed = null;
 
         foreach ($rules as $rule) {
-            foreach ($tickets as $t) {
-                if ($this->alreadyRan((int) $rule['id'], (int) $t['id'])) {
+            $pool = $open;
+            if ($this->targetsClosed($rule)) {
+                $closed ??= $this->db->table('tickets')->whereIn('status', ['Resolved', 'Closed'])->get()->getResultArray();
+                $pool = array_merge($open, $closed);
+            }
+            // One query per rule, not one per (rule, ticket).
+            $ran = array_fill_keys(array_map('intval', array_column(
+                $this->db->table('automation_runs')->select('ticket_id')->where('rule_id', (int) $rule['id'])->get()->getResultArray(),
+                'ticket_id'
+            )), true);
+
+            foreach ($pool as $t) {
+                if (isset($ran[(int) $t['id']])) {
                     continue;
                 }
                 if (! $this->matches($rule, $t)) {
                     continue;
                 }
                 $summary = $this->execute($rule, $t);
-                $this->db->table('automation_runs')->insert([
-                    'rule_id' => $rule['id'], 'ticket_id' => $t['id'], 'created_at' => date('Y-m-d H:i:s'),
-                ]);
+                try {
+                    $this->db->table('automation_runs')->insert([
+                        'rule_id' => $rule['id'], 'ticket_id' => $t['id'], 'created_at' => date('Y-m-d H:i:s'),
+                    ]);
+                } catch (\Throwable $e) {
+                    // A concurrent pass got here first; the unique key did its job.
+                }
                 $out[] = $t['code'] . ' — "' . $rule['name'] . '": ' . $summary;
             }
         }
 
         return $out;
+    }
+
+    /**
+     * Does a time rule mean to look at resolved/closed tickets? Only when a
+     * condition names one of those statuses, or measures time since resolution.
+     */
+    private function targetsClosed(array $rule): bool
+    {
+        foreach (json_decode($rule['conditions'] ?? '[]', true) ?: [] as $c) {
+            $field = $c['field'] ?? '';
+            if ($field === 'hours_since_resolved') {
+                return true;
+            }
+            if ($field === 'status') {
+                $v  = mb_strtolower(trim((string) ($c['value'] ?? '')));
+                $op = $c['op'] ?? '';
+                // "status equals Resolved" targets closed; "status not_equals Open"
+                // would too. Anything mentioning a closed state, or negating an
+                // open one, gets the full pool.
+                if (in_array($v, ['resolved', 'closed'], true) || in_array($op, ['not_equals', 'not_contains'], true)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /** Event pass for one ticket (Ticket is created / Ticket is updated). */
@@ -134,11 +179,6 @@ class AutomationEngine
         }
     }
 
-    private function alreadyRan(int $ruleId, int $ticketId): bool
-    {
-        return (bool) $this->db->table('automation_runs')->where('rule_id', $ruleId)->where('ticket_id', $ticketId)->countAllResults();
-    }
-
     /* ---------- condition evaluation ---------- */
 
     private function matches(array $rule, array $t): bool
@@ -192,9 +232,9 @@ class AutomationEngine
                 return $t['resolved_at'] ? (time() - strtotime($t['resolved_at'])) / 3600 : null;
 
             case 'sla_pct':
-                $total = strtotime($t['res_due']) - strtotime($t['created_at']);
-
-                return $total > 0 ? ((time() - strtotime($t['created_at'])) / $total) * 100 : null;
+                // Same clock the UI shows: business hours and stop-the-clock
+                // pauses are respected, so a warning does not fire over a weekend.
+                return th_sla($t)['pct'];
 
             default:
                 return null;
@@ -354,6 +394,14 @@ class AutomationEngine
 
         if (count($upd) > 1) {
             $this->db->table('tickets')->where('id', $t['id'])->update($upd);
+        }
+        if (! empty($upd['agent_id']) && (int) $upd['agent_id'] !== (int) ($t['agent_id'] ?? 0)) {
+            TicketIntake::notifyUsers([(int) $upd['agent_id']], 'assigned', $t['code'] . ' assigned to you by automation "' . $rule['name'] . '"',
+                site_url('app/tickets/' . $t['code']), (int) $t['id'], null, $t['subject']);
+        }
+        if (! empty($upd['escalated'])) {
+            // Same promise as the Escalate button: supervisors and the assignee hear about it.
+            TicketIntake::notifyEscalation(array_merge($t, $upd), null, 'Escalated by automation "' . $rule['name'] . '"');
         }
         $summary = $done ? implode(', ', $done) : 'no applicable changes';
         $this->db->table('ticket_messages')->insert([

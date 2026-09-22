@@ -43,12 +43,15 @@ class ProductHardening extends Migration
             $this->db->table('settings')->insert(['skey' => $k, 'svalue' => $v]);
         }
 
-        // Link the seeded incidents to their problems.
-        foreach (['INC-2098' => 'PRB-0044', 'INC-2090' => 'PRB-0041'] as $ticket => $problem) {
-            $this->db->query(
-                'UPDATE tickets SET problem_id = (SELECT id FROM problems WHERE code = ?) WHERE code = ?',
-                [$problem, $ticket]
-            );
+        // Link the seeded incidents to their problems (demo data only; a no-op
+        // on an empty database anyway, but never touch a production desk).
+        if (ENVIRONMENT !== 'production') {
+            foreach (['INC-2098' => 'PRB-0044', 'INC-2090' => 'PRB-0041'] as $ticket => $problem) {
+                $this->db->query(
+                    'UPDATE tickets SET problem_id = (SELECT id FROM problems WHERE code = ?) WHERE code = ?',
+                    [$problem, $ticket]
+                );
+            }
         }
     }
 

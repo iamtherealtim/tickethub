@@ -68,6 +68,8 @@ $qs = static function (array $overrides) use ($f, $view) {
       <?= th_select('status', $f['status'], array_merge([['', 'Any status']], array_map(static fn ($s) => [$s, $s], array_keys(TH_STATUS))), 'data-autosubmit') ?>
       <?= th_select('priority', $f['priority'], array_merge([['', 'Any priority']], array_map(static fn ($s) => [$s, $s], array_keys(TH_PRIORITY))), 'data-autosubmit') ?>
       <?= th_select('type', $f['type'], [['', 'Any type'], ['Incident', 'Incident'], ['Service request', 'Service request']], 'data-autosubmit') ?>
+      <?= th_select('category', $f['category'] ?? '', array_merge([['', 'Any category']], array_map(static fn ($c) => [$c, $c], TH_CATEGORIES)), 'data-autosubmit') ?>
+      <?= th_select('source', $f['source'] ?? '', array_merge([['', 'Any source']], array_map(static fn ($s) => [$s, $s], TH_SOURCES)), 'data-autosubmit') ?>
       <?= th_select('group', $f['group'], array_merge([['', 'Any group']], array_map(static fn ($g) => [$g['id'], $g['name']], $groups)), 'data-autosubmit') ?>
       <?= th_select('agent', $f['agent'], array_merge([['', 'Any assignee'], ['none', 'Unassigned']], array_map(static fn ($a) => [$a['id'], $a['name']], $isAdmin ? $agents : $assignableAgents)), 'data-autosubmit') ?>
       <?= th_select('sort', $f['sort'], [['sla', 'Sort: SLA due'], ['updated', 'Sort: last updated'], ['created', 'Sort: newest'], ['priority', 'Sort: priority']], 'data-autosubmit') ?>
@@ -85,6 +87,10 @@ $qs = static function (array $overrides) use ($f, $view) {
       <select data-bulk="assign" class="h-7 rounded-md bg-ink-600 border border-white/10 text-[12px] text-white pl-2">
         <option value="">Assign to…</option>
         <?php foreach ($assignableAgents as $a): ?><option value="<?= $a['id'] ?>"><?= esc($a['name']) ?></option><?php endforeach ?>
+      </select>
+      <select data-bulk="group" class="h-7 rounded-md bg-ink-600 border border-white/10 text-[12px] text-white pl-2">
+        <option value="">Move to group…</option>
+        <?php foreach ($groups as $g): if ($isAdmin || (int) $g['id'] === (int) ($me['group_id'] ?? 0)): ?><option value="<?= $g['id'] ?>"><?= esc($g['name']) ?></option><?php endif; endforeach ?>
       </select>
       <select data-bulk="status" class="h-7 rounded-md bg-ink-600 border border-white/10 text-[12px] text-white pl-2">
         <option value="">Set status…</option>
@@ -174,7 +180,7 @@ $qs = static function (array $overrides) use ($f, $view) {
     <?= csrf_field() ?>
     <?php // Carry the current filters through as hidden fields. ?>
     <input type="hidden" name="view" value="<?= esc($view, 'attr') ?>">
-    <?php foreach (['q', 'status', 'priority', 'type', 'group', 'agent', 'sort'] as $k): ?>
+    <?php foreach (['q', 'status', 'priority', 'type', 'category', 'source', 'group', 'agent', 'sort'] as $k): ?>
     <input type="hidden" name="<?= $k ?>" value="<?= esc($filters[$k] ?? '', 'attr') ?>">
     <?php endforeach ?>
     <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Name<span class="text-alert"> *</span></label>

@@ -15,11 +15,14 @@ $section = static function (string $title, string $inner, string $right = ''): s
         . $right . '</div>' . $inner . '</div>';
 };
 
-$footer = '<form method="post" action="' . site_url('app/assets/' . $a['id'] . '/delete') . '"'
-    . ' data-confirm="' . esc('Delete ' . $a['tag'] . '? Ticket links to it are removed too.', 'attr') . '"'
-    . ' data-confirm-label="Delete" data-confirm-title="Delete this asset?" class="mr-auto">'
-    . '<input type="hidden" name="' . csrf_token() . '" value="' . csrf_hash() . '">'
-    . '<button type="submit" class="h-9 px-3 rounded-lg border border-alert-100 bg-white text-[13px] font-medium text-alert hover:bg-alert-50">Delete</button></form>'
+// Delete is supervisory; everyone else gets the spacer so the buttons keep their layout.
+$footer = (! empty($canManage)
+    ? '<form method="post" action="' . site_url('app/assets/' . $a['id'] . '/delete') . '"'
+        . ' data-confirm="' . esc('Delete ' . $a['tag'] . '? Ticket links to it are removed too.', 'attr') . '"'
+        . ' data-confirm-label="Delete" data-confirm-title="Delete this asset?" class="mr-auto">'
+        . '<input type="hidden" name="' . csrf_token() . '" value="' . csrf_hash() . '">'
+        . '<button type="submit" class="h-9 px-3 rounded-lg border border-alert-100 bg-white text-[13px] font-medium text-alert hover:bg-alert-50">Delete</button></form>'
+    : '<span class="mr-auto"></span>')
     . '<a href="' . site_url('app/assets/' . $a['id']) . '" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line bg-white text-[13px] font-medium text-ink-500 hover:bg-canvas">'
     . th_icon('ext', 'w-3.5 h-3.5') . 'Open record</a>'
     . '<button type="button" data-fetch-modal="' . site_url('app/assets/' . $a['id'] . '/edit') . '" class="h-9 px-3.5 rounded-lg border border-line bg-white text-[13px] font-medium text-ink-500 hover:bg-canvas">Edit</button>'

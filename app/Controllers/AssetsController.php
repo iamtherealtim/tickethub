@@ -4,6 +4,12 @@ namespace App\Controllers;
 
 class AssetsController extends BaseController
 {
+    /** Deleting kit and bulk-loading the register are supervisory actions. */
+    private function canManage(): bool
+    {
+        return in_array($this->me['role'] ?? '', ['Administrator', 'Supervisor'], true);
+    }
+
     public function index()
     {
         $q    = mb_strtolower(trim((string) $this->request->getGet('q')));
@@ -42,8 +48,74 @@ class AssetsController extends BaseController
             'page' => $page, 'perPage' => $perPage, 'total' => $total,
             'pdqConfigured' => \App\Libraries\PdqConnect::configured(),
             'pdqLastSync' => \App\Libraries\Settings::get('pdq_last_sync'),
+            'pdqLastError' => \App\Libraries\Settings::get('pdq_last_error'),
             'assignablePeople' => $this->db->table('users')->where('active', 1)->orderBy('name')->get()->getResultArray(),
+            'canManage' => $this->canManage(),
+            'importOpen' => $this->request->getUri()->getSegment(3) === 'import',
         ]);
+    }
+
+    /** GET assets/import — the list with the import dialog open. */
+    public function importForm()
+    {
+        if (! $this->canManage()) {
+            return $this->denyManage();
+        }
+
+        return $this->index();
+    }
+
+    private function denyManage()
+    {
+        $this->toast('Only supervisors and administrators can do that', 'warn');
+
+        return redirect()->to('/app/assets');
+    }
+
+    /**
+     * POST assets/import — CSV with headers name,type,model,serial,status,site,holder_email.
+     * Rows are matched on a real serial first, then on name; matches are updated,
+     * the rest created. Nothing is deleted.
+     */
+    public function import()
+    {
+        if (! $this->canManage()) {
+            return $this->denyManage();
+        }
+        $file = $this->request->getFile('csv');
+        if (! $file || ! $file->isValid()) {
+            $this->toast('Choose a CSV file to import', 'warn');
+
+            return redirect()->to('/app/assets/import');
+        }
+        if ($file->getSize() > 5 * 1024 * 1024) {
+            $this->toast('That file is larger than 5 MB — split it up', 'warn');
+
+            return redirect()->to('/app/assets/import');
+        }
+        $fh = fopen($file->getTempName(), 'r');
+        if (! $fh) {
+            $this->toast('Could not read the file', 'bad');
+
+            return redirect()->to('/app/assets/import');
+        }
+        $r = self::importCsv($fh);
+        fclose($fh);
+        if ($r['error'] !== null) {
+            $this->toast($r['error'], 'warn');
+
+            return redirect()->to('/app/assets/import');
+        }
+        ['created' => $created, 'updated' => $updated, 'skipped' => $skipped, 'problems' => $problems] = $r;
+
+        \App\Libraries\Audit::log('asset.imported', $created . ' created, ' . $updated . ' updated, ' . $skipped . ' skipped');
+        $msg = 'Imported — ' . $created . ' created, ' . $updated . ' updated, ' . $skipped . ' skipped';
+        if ($problems) {
+            $msg .= ' · ' . implode('; ', array_slice($problems, 0, 3)) . (count($problems) > 3 ? '; +' . (count($problems) - 3) . ' more' : '');
+        }
+        $this->toast($msg, $skipped || $problems ? 'warn' : 'ok');
+
+        return redirect()->to('/app/assets');
     }
 
     public function create()
@@ -61,8 +133,8 @@ class AssetsController extends BaseController
         $this->db->table('assets')->insert([
             'tag' => $tag, 'name' => $p['name'], 'type' => $p['type'] ?? 'Laptop',
             'model' => $p['model'] ?: '—', 'serial' => $p['serial'] ?: '—',
-            'user_id' => $p['user_id'] !== '' ? (int) $p['user_id'] : null,
-            'site' => $p['site'] ?? '—', 'status' => $p['user_id'] !== '' ? 'In use' : 'In stock',
+            'user_id' => ! empty($p['user_id']) ? (int) $p['user_id'] : null,
+            'site' => $p['site'] ?? '—', 'status' => ! empty($p['user_id']) ? 'In use' : 'In stock',
             'warranty_until' => date('Y-m-d H:i:s', time() + 365 * 86400), 'os' => '—',
         ]);
         $this->toast('Asset added');
@@ -83,6 +155,7 @@ class AssetsController extends BaseController
         return view('agent/asset', $this->agentShared() + [
             'title' => $a['tag'], 'nav' => 'assets',
             'a' => $a, 'related' => $this->relatedTickets($id), 'users' => $this->users(),
+            'canManage' => $this->canManage(),
         ]);
     }
 
@@ -96,6 +169,7 @@ class AssetsController extends BaseController
 
         return view('agent/_asset_modal', [
             'a' => $a, 'related' => $this->relatedTickets($id), 'users' => $this->users(),
+            'canManage' => $this->canManage(),
         ]);
     }
 
@@ -141,11 +215,11 @@ class AssetsController extends BaseController
         }
         $this->db->table('assets')->where('id', $id)->update([
             'name' => $p['name'], 'type' => $p['type'] ?? $a['type'],
-            'model' => $p['model'] ?: '—', 'serial' => $p['serial'] ?: '—',
-            'user_id' => $p['user_id'] !== '' ? (int) $p['user_id'] : null,
+            'model' => ($p['model'] ?? '') ?: '—', 'serial' => ($p['serial'] ?? '') ?: '—',
+            'user_id' => ! empty($p['user_id']) ? (int) $p['user_id'] : null,
             'site' => $p['site'] ?? $a['site'],
-            'status' => in_array($p['status'], array_keys(TH_ASSET_STATUS), true) ? $p['status'] : $a['status'],
-            'os' => $p['os'] ?: '—',
+            'status' => in_array($p['status'] ?? '', array_keys(TH_ASSET_STATUS), true) ? $p['status'] : $a['status'],
+            'os' => ($p['os'] ?? '') ?: '—',
             'warranty_until' => $warranty,
         ]);
         $this->toast($a['tag'] . ' updated');
@@ -157,6 +231,11 @@ class AssetsController extends BaseController
 
     public function delete(int $id)
     {
+        if (! $this->canManage()) {
+            $this->toast('Only supervisors and administrators can delete assets', 'warn');
+
+            return redirect()->back();
+        }
         $a = $this->db->table('assets')->where('id', $id)->get()->getRowArray();
         if ($a) {
             $this->db->table('ticket_assets')->where('asset_id', $id)->delete();
@@ -279,5 +358,125 @@ class AssetsController extends BaseController
         $this->toast($t['code'] . ' created');
 
         return redirect()->to('/app/tickets/' . $t['code']);
+    }
+
+    /**
+     * Upsert assets from an open CSV stream (header row first). Returns
+     * counts plus a list of per-line problems, or ['error' => message] when
+     * the file itself is unusable. Static so it can be exercised without an upload.
+     *
+     * @param resource $fh
+     * @return array{created:int, updated:int, skipped:int, problems:string[], error:?string}
+     */
+    public static function importCsv($fh): array
+    {
+        $db = db_connect();
+        $out = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'problems' => [], 'error' => null];
+        $header = fgetcsv($fh);
+        if (! is_array($header)) {
+            $out['error'] = 'The file is empty';
+
+            return $out;
+        }
+        // Column lookup by name, so column order does not matter; BOM-safe.
+        $cols = [];
+        foreach ($header as $i => $h) {
+            $cols[strtolower(trim(str_replace("\xEF\xBB\xBF", '', (string) $h)))] = $i;
+        }
+        if (! isset($cols['name'])) {
+            $out['error'] = 'The CSV needs a header row with at least a "name" column (name,type,model,serial,status,site,holder_email)';
+
+            return $out;
+        }
+        $cell = static function (array $row, string $k) use ($cols): string {
+            return isset($cols[$k], $row[$cols[$k]]) ? trim((string) $row[$cols[$k]]) : '';
+        };
+
+        $usersByEmail = [];
+        foreach ($db->table('users')->select('id, email')->where('active', 1)->get()->getResultArray() as $u) {
+            $usersByEmail[strtolower(trim((string) $u['email']))] = (int) $u['id'];
+        }
+        $types = ['Laptop', 'Mobile', 'Printer', 'Server', 'Switch', 'Dock', 'License'];
+
+        $line = 1;
+        while (($row = fgetcsv($fh)) !== false) {
+            $line++;
+            if ($row === [null] || $row === ['']) {
+                continue; // blank line
+            }
+            if ($line > 5001) {
+                $out['problems'][] = 'stopped at 5000 rows';
+                break;
+            }
+            $name   = mb_substr($cell($row, 'name'), 0, 100);
+            $serial = mb_substr($cell($row, 'serial'), 0, 80);
+            $model  = mb_substr($cell($row, 'model'), 0, 100);
+            $site   = mb_substr($cell($row, 'site'), 0, 60);
+            $type   = $cell($row, 'type');
+            $status = $cell($row, 'status');
+            $email  = strtolower($cell($row, 'holder_email'));
+            if ($name === '') {
+                $out['skipped']++;
+                $out['problems'][] = 'line ' . $line . ': no name';
+
+                continue;
+            }
+            $serialOk = \App\Libraries\PdqConnect::usableSerial($serial);
+            $userId = null;
+            if ($email !== '') {
+                $userId = $usersByEmail[$email] ?? null;
+                if ($userId === null) {
+                    $out['problems'][] = 'line ' . $line . ': no active user ' . $email . ' (left unassigned)';
+                }
+            }
+
+            // Match on a real serial first, then on name; nothing is ever deleted.
+            $existing = null;
+            if ($serialOk) {
+                $existing = $db->table('assets')->where('serial', $serial)->get()->getRowArray();
+            }
+            if (! $existing) {
+                $existing = $db->table('assets')->where('name', $name)->get()->getRowArray();
+            }
+
+            $fields = ['name' => $name];
+            if ($serialOk) {
+                $fields['serial'] = $serial;
+            }
+            if ($model !== '') {
+                $fields['model'] = $model;
+            }
+            if ($site !== '') {
+                $fields['site'] = $site;
+            }
+            $typeMatch = array_values(array_filter($types, static fn ($t) => strcasecmp($t, $type) === 0));
+            if ($typeMatch) {
+                $fields['type'] = $typeMatch[0];
+            }
+            $statusMatch = array_values(array_filter(array_keys(TH_ASSET_STATUS), static fn ($s) => strcasecmp($s, $status) === 0));
+            if ($statusMatch) {
+                $fields['status'] = $statusMatch[0];
+            }
+            if ($userId !== null) {
+                $fields['user_id'] = $userId;
+            }
+
+            if ($existing) {
+                $db->table('assets')->where('id', $existing['id'])->update($fields);
+                $out['updated']++;
+            } else {
+                do {
+                    $tag = 'AST-' . random_int(1000, 9999);
+                } while ($db->table('assets')->where('tag', $tag)->countAllResults());
+                $db->table('assets')->insert($fields + [
+                    'tag' => $tag, 'type' => 'Laptop', 'model' => '—', 'serial' => '—', 'site' => '—', 'os' => '—',
+                    'user_id' => null,
+                    'status' => $userId !== null ? 'In use' : 'In stock',
+                ]);
+                $out['created']++;
+            }
+        }
+
+        return $out;
     }
 }

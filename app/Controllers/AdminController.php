@@ -150,8 +150,8 @@ class AdminController extends BaseController
         $this->db->table('users')->insert([
             'name' => $p['name'], 'email' => strtolower(trim($p['email'])),
             'password_hash' => password_hash($temp, PASSWORD_DEFAULT),
-            'role' => in_array($p['role'], ['Agent', 'Supervisor', 'Administrator'], true) ? $p['role'] : 'Agent',
-            'title' => $p['title'] ?: 'Support Analyst', 'group_id' => (int) $p['group_id'],
+            'role' => in_array($p['role'] ?? '', ['Agent', 'Supervisor', 'Administrator'], true) ? $p['role'] : 'Agent',
+            'title' => ($p['title'] ?? '') ?: 'Support Analyst', 'group_id' => (int) ($p['group_id'] ?? 0),
             'color' => 'violet', 'active' => 1, 'must_change_password' => 1,
             'created_at' => $now, 'updated_at' => $now,
         ]);
@@ -176,12 +176,12 @@ class AdminController extends BaseController
             return redirect()->to('/app/admin/agents');
         }
         $this->db->table('users')->where('id', $id)->update([
-            'name' => $p['name'], 'title' => $p['title'] ?: $u['title'],
-            'role' => in_array($p['role'], ['Agent', 'Supervisor', 'Administrator'], true) ? $p['role'] : $u['role'],
-            'group_id' => (int) $p['group_id'] ?: $u['group_id'],
+            'name' => $p['name'], 'title' => ($p['title'] ?? '') ?: $u['title'],
+            'role' => in_array($p['role'] ?? '', ['Agent', 'Supervisor', 'Administrator'], true) ? $p['role'] : $u['role'],
+            'group_id' => (int) ($p['group_id'] ?? 0) ?: $u['group_id'],
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
-        Audit::log('admin.agent_updated', $u['email'] . ' → role ' . $p['role']);
+        Audit::log('admin.agent_updated', $u['email'] . ' → role ' . ($p['role'] ?? $u['role']));
         $this->toast($p['name'] . ' updated');
 
         return redirect()->to('/app/admin/agents');
@@ -210,8 +210,8 @@ class AdminController extends BaseController
         $this->db->table('users')->insert([
             'name' => $p['name'], 'email' => strtolower(trim($p['email'])),
             'password_hash' => password_hash($temp, PASSWORD_DEFAULT),
-            'role' => 'Requester', 'title' => $p['title'] ?: 'Employee',
-            'dept' => $p['dept'] ?: null, 'site' => $p['site'] ?: null, 'phone' => $p['phone'] ?: null,
+            'role' => 'Requester', 'title' => ($p['title'] ?? '') ?: 'Employee',
+            'dept' => ($p['dept'] ?? '') ?: null, 'site' => ($p['site'] ?? '') ?: null, 'phone' => ($p['phone'] ?? '') ?: null,
             'color' => ['brand', 'ink', 'violet', 'signal'][random_int(0, 3)],
             'active' => 1, 'must_change_password' => 1, 'created_at' => $now, 'updated_at' => $now,
         ]);
@@ -231,8 +231,8 @@ class AdminController extends BaseController
             return redirect()->to('/app/admin/people');
         }
         $this->db->table('users')->where('id', $id)->update([
-            'name' => $p['name'], 'title' => $p['title'] ?: null,
-            'dept' => $p['dept'] ?: null, 'site' => $p['site'] ?: null, 'phone' => $p['phone'] ?: null,
+            'name' => $p['name'], 'title' => ($p['title'] ?? '') ?: null,
+            'dept' => ($p['dept'] ?? '') ?: null, 'site' => ($p['site'] ?? '') ?: null, 'phone' => ($p['phone'] ?? '') ?: null,
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
         Audit::log('admin.person_updated', $u['email']);
@@ -250,7 +250,7 @@ class AdminController extends BaseController
             return redirect()->back();
         }
         $this->db->table('groups')->insert([
-            'name' => $p['name'], 'description' => $p['description'] ?: '—',
+            'name' => $p['name'], 'description' => ($p['description'] ?? '') ?: '—',
             'hours_id' => (int) ($p['hours_id'] ?? 1),
         ]);
         $this->toast('Group created');
@@ -265,7 +265,7 @@ class AdminController extends BaseController
             $this->toast('Name the group', 'warn');
         } else {
             $this->db->table('groups')->where('id', $id)->update([
-                'name' => $p['name'], 'description' => $p['description'] ?: '—', 'hours_id' => (int) ($p['hours_id'] ?? 1),
+                'name' => $p['name'], 'description' => ($p['description'] ?? '') ?: '—', 'hours_id' => (int) ($p['hours_id'] ?? 1),
             ]);
             Audit::log('admin.group_updated', $p['name']);
             $this->toast('Group updated');
@@ -299,9 +299,9 @@ class AdminController extends BaseController
             return redirect()->back();
         }
         $this->db->table('slas')->insert([
-            'name' => $p['name'], 'first_response' => $p['first_response'] ?: '1 hour',
-            'resolution' => $p['resolution'] ?: '8 hours',
-            'hours' => $p['hours'] ?? 'Business hours', 'escalation' => $p['escalation'] ?: 'None', 'active' => 1,
+            'name' => $p['name'], 'first_response' => ($p['first_response'] ?? '') ?: '1 hour',
+            'resolution' => ($p['resolution'] ?? '') ?: '8 hours',
+            'hours' => $p['hours'] ?? 'Business hours', 'escalation' => ($p['escalation'] ?? '') ?: 'None', 'active' => 1,
         ]);
         $this->toast('Policy created');
 
@@ -315,9 +315,9 @@ class AdminController extends BaseController
             $this->toast('Name the policy', 'warn');
         } else {
             $this->db->table('slas')->where('id', $id)->update([
-                'name' => $p['name'], 'first_response' => $p['first_response'] ?: '1 hour',
-                'resolution' => $p['resolution'] ?: '8 hours', 'hours' => $p['hours'] ?? 'Business hours',
-                'escalation' => $p['escalation'] ?: 'None',
+                'name' => $p['name'], 'first_response' => ($p['first_response'] ?? '') ?: '1 hour',
+                'resolution' => ($p['resolution'] ?? '') ?: '8 hours', 'hours' => $p['hours'] ?? 'Business hours',
+                'escalation' => ($p['escalation'] ?? '') ?: 'None',
             ]);
             Audit::log('admin.sla_updated', $p['name']);
             $this->toast('Policy updated');
@@ -446,7 +446,7 @@ class AdminController extends BaseController
         }
         $this->db->table('ticket_fields')->insert([
             'label' => $p['label'], 'type' => $p['type'] ?? 'Text',
-            'required' => $p['required'] === 'yes' ? 1 : 0,
+            'required' => ($p['required'] ?? '') === 'yes' ? 1 : 0,
             'agents' => isset($p['agents']) ? 1 : 0, 'portal' => isset($p['portal']) ? 1 : 0,
             'options' => $this->fieldOptions(),
         ]);
@@ -468,8 +468,8 @@ class AdminController extends BaseController
 
         return [
             'position'    => (int) ($p['position'] ?? 10),
-            'match_type'  => in_array($p['match_type'], ['Category', 'Subject contains', 'Source'], true) ? $p['match_type'] : 'Category',
-            'match_value' => trim($p['match_value']),
+            'match_type'  => in_array($p['match_type'] ?? '', ['Category', 'Subject contains', 'Source'], true) ? $p['match_type'] : 'Category',
+            'match_value' => trim((string) $p['match_value']),
             'group_id'    => (int) $p['group_id'],
             'agent_id'    => ! empty($p['agent_id']) ? (int) $p['agent_id'] : null,
             'priority'    => in_array($p['priority'] ?? '', ['Urgent', 'High', 'Medium', 'Low'], true) ? $p['priority'] : null,
@@ -531,16 +531,39 @@ class AdminController extends BaseController
             return redirect()->to('/app/admin/integrations');
         }
 
+        // A token acts as one specific person: their role and group scope apply
+        // to every call, and the audit trail names them.
+        $userId = (int) $this->request->getPost('user_id');
+        $actsAs = $this->db->table('users')->where('id', $userId)->where('active', 1)
+            ->whereIn('role', ['Administrator', 'Supervisor', 'Agent'])->get()->getRowArray();
+        if (! $actsAs) {
+            $this->toast('Pick an active agent, supervisor or administrator for the token to act as', 'warn');
+
+            return redirect()->to('/app/admin/integrations');
+        }
+
+        $expiresAt = null;
+        $days      = trim((string) $this->request->getPost('expires_days'));
+        if ($days !== '') {
+            if (! ctype_digit($days) || (int) $days < 1 || (int) $days > 3650) {
+                $this->toast('Expiry must be a whole number of days between 1 and 3650, or blank for never', 'warn');
+
+                return redirect()->to('/app/admin/integrations');
+            }
+            $expiresAt = date('Y-m-d H:i:s', time() + (int) $days * 86400);
+        }
+
         // Shown once. Only the hash is kept, so this is the single opportunity
         // to copy it — same contract as every other API token worth trusting.
         $token = bin2hex(random_bytes(24));
         $this->db->table('api_tokens')->insert([
-            'user_id' => (int) $this->me['id'],
+            'user_id' => (int) $actsAs['id'],
             'name' => mb_substr($name, 0, 60),
             'token_hash' => hash('sha256', $token),
+            'expires_at' => $expiresAt,
             'created_at' => date('Y-m-d H:i:s'),
         ]);
-        Audit::log('admin.api_token_created', $name);
+        Audit::log('admin.api_token_created', $name . ' (acts as ' . $actsAs['email'] . ($expiresAt ? ', expires ' . $expiresAt : '') . ')');
         $this->session->setFlashdata('new_api_token', $token);
         $this->toast('Token created — copy it now, it will not be shown again');
 
@@ -567,7 +590,7 @@ class AdminController extends BaseController
         } else {
             $this->db->table('ticket_fields')->where('id', $id)->update([
                 'label' => $p['label'], 'type' => $p['type'] ?? 'Text',
-                'required' => $p['required'] === 'yes' ? 1 : 0,
+                'required' => ($p['required'] ?? '') === 'yes' ? 1 : 0,
                 'agents' => isset($p['agents']) ? 1 : 0, 'portal' => isset($p['portal']) ? 1 : 0,
                 'options' => $this->fieldOptions(),
             ]);
@@ -614,8 +637,8 @@ class AdminController extends BaseController
             $this->toast('Name the calendar', 'warn');
         } else {
             $this->db->table('business_hours')->insert([
-                'name' => $p['name'], 'tz' => $p['tz'] ?: 'UTC', 'days' => $p['days'] ?: 'Mon-Fri',
-                'time_range' => $p['time_range'] ?: '09:00 - 17:00', 'holidays' => $p['holidays'] ?: 'None',
+                'name' => $p['name'], 'tz' => ($p['tz'] ?? '') ?: 'UTC', 'days' => ($p['days'] ?? '') ?: 'Mon-Fri',
+                'time_range' => ($p['time_range'] ?? '') ?: '09:00 - 17:00', 'holidays' => ($p['holidays'] ?? '') ?: 'None',
                 'holiday_dates' => $this->holidayDates($p['holiday_dates'] ?? ''),
             ]);
             Audit::log('admin.hours_added', $p['name']);
@@ -632,8 +655,8 @@ class AdminController extends BaseController
             $this->toast('Name the calendar', 'warn');
         } else {
             $this->db->table('business_hours')->where('id', $id)->update([
-                'name' => $p['name'], 'tz' => $p['tz'] ?: 'UTC', 'days' => $p['days'] ?: 'Mon-Fri',
-                'time_range' => $p['time_range'] ?: '09:00 - 17:00', 'holidays' => $p['holidays'] ?: 'None',
+                'name' => $p['name'], 'tz' => ($p['tz'] ?? '') ?: 'UTC', 'days' => ($p['days'] ?? '') ?: 'Mon-Fri',
+                'time_range' => ($p['time_range'] ?? '') ?: '09:00 - 17:00', 'holidays' => ($p['holidays'] ?? '') ?: 'None',
                 'holiday_dates' => $this->holidayDates($p['holiday_dates'] ?? ''),
             ]);
             Audit::log('admin.hours_updated', $p['name']);
@@ -739,6 +762,8 @@ class AdminController extends BaseController
     {
         $p = $this->request->getPost();
         Settings::set('inbound_email_enabled', isset($p['inbound_email_enabled']) ? '1' : '0');
+        Settings::set('inbound_unknown_policy', ($p['inbound_unknown_policy'] ?? '') === 'drop' ? 'drop' : 'create');
+        Settings::set('inbound_reopen_days', (string) max(0, min(365, (int) ($p['inbound_reopen_days'] ?? 5))));
         if (isset($p['regenerate'])) {
             Settings::set('inbound_email_secret', bin2hex(random_bytes(16)));
             Audit::log('admin.inbound_secret_rotated');
@@ -778,7 +803,7 @@ class AdminController extends BaseController
         Settings::saveMany([
             'mail_enabled'    => isset($p['mail_enabled']) ? '1' : '0',
             'mail_host'       => $p['mail_host'] ?? '',
-            'mail_port'       => $p['mail_port'] ?: '587',
+            'mail_port'       => ($p['mail_port'] ?? '') ?: '587',
             'mail_username'   => $p['mail_username'] ?? '',
             'mail_password'   => $p['mail_password'] ?? '',
             'mail_encryption' => in_array($p['mail_encryption'] ?? '', ['tls', 'ssl', 'none'], true) ? $p['mail_encryption'] : 'tls',
@@ -814,13 +839,31 @@ class AdminController extends BaseController
     public function saveSso()
     {
         $p = $this->request->getPost();
+        $tenant = strtolower(trim((string) ($p['azure_tenant_id'] ?? '')));
+        if ($tenant !== '' && ! in_array($tenant, ['common', 'organizations'], true)
+            && ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $tenant)) {
+            $this->toast('Tenant must be a directory GUID, "common" or "organizations"', 'warn');
+
+            return redirect()->to('/app/admin/sso');
+        }
+        $groupIdRule = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
+        $groups = [];
+        foreach (['sso_agent_group', 'sso_admin_group'] as $k) {
+            $v = strtolower(trim((string) ($p[$k] ?? '')));
+            if ($v !== '' && ! preg_match($groupIdRule, $v)) {
+                $this->toast('Group ids must be Entra group object ids (GUIDs) — leave blank to disable mapping', 'warn');
+
+                return redirect()->to('/app/admin/sso');
+            }
+            $groups[$k] = $v;
+        }
         Settings::saveMany([
             'azure_enabled'       => isset($p['azure_enabled']) ? '1' : '0',
-            'azure_tenant_id'     => $p['azure_tenant_id'] ?? '',
-            'azure_client_id'     => $p['azure_client_id'] ?? '',
+            'azure_tenant_id'     => $tenant,
+            'azure_client_id'     => trim((string) ($p['azure_client_id'] ?? '')),
             'azure_client_secret' => $p['azure_client_secret'] ?? '',
             'azure_autoprovision' => isset($p['azure_autoprovision']) ? '1' : '0',
-        ], ['azure_client_secret']);
+        ] + $groups, ['azure_client_secret']);
         Audit::log('admin.sso_saved', 'enabled=' . (isset($p['azure_enabled']) ? '1' : '0'));
         $this->toast('Single sign-on settings saved');
 
