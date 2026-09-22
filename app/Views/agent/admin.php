@@ -9,6 +9,18 @@ $tabs = [
     ['mail', 'Email settings', 'send'], ['sso', 'Single sign-on', 'shield'], ['integrations', 'Integrations', 'link'],
     ['audit', 'Audit log', 'book'],
 ];
+// Plug-in tabs: app/Views/agent/admin/<id>.tab.php returns ['label', 'icon', 'order' (int, tabs above are 10..130)].
+$pluginTabs = [];
+foreach (glob(APPPATH . 'Views/agent/admin/*.tab.php') ?: [] as $tabFile) {
+    $meta = include $tabFile;
+    $pluginTabs[] = [basename($tabFile, '.tab.php'), $meta['label'] ?? basename($tabFile, '.tab.php'), $meta['icon'] ?? 'link', (int) ($meta['order'] ?? 200)];
+}
+if ($pluginTabs) {
+    $i = 0;
+    $tabs = array_map(static function ($t) use (&$i) { $i += 10; return [$t[0], $t[1], $t[2], $i]; }, $tabs);
+    $tabs = array_merge($tabs, $pluginTabs);
+    usort($tabs, static fn ($a, $b) => $a[3] <=> $b[3]);
+}
 $groupsById = [];
 foreach ($groups as $g) {
     $groupsById[(int) $g['id']] = $g;
@@ -46,7 +58,7 @@ foreach ($hours as $h) {
   <div class="grid lg:grid-cols-[210px_1fr] gap-4 items-start">
     <section class="bg-white border border-line rounded-xl shadow-card">
       <div class="p-2">
-        <?php foreach ($tabs as [$id, $label, $ic]): $on = $tab === $id; ?>
+        <?php foreach ($tabs as $tabDef): [$id, $label, $ic] = $tabDef; $on = $tab === $id; ?>
         <a href="<?= site_url('app/admin/' . $id) ?>" class="w-full flex items-center gap-2.5 h-9 px-2.5 rounded-lg text-[12.5px] font-medium transition
           <?= $on ? 'bg-ink text-white' : 'text-muted hover:bg-canvas hover:text-ink' ?>">
           <span class="<?= $on ? 'text-brand-100' : 'text-faint' ?>"><?= th_icon($ic, 'w-4 h-4') ?></span><?= $label ?></a>
@@ -656,6 +668,8 @@ foreach ($hours as $h) {
             . '</div>'
         ) ?>
       </form>
+      <?php elseif (! empty($pluginTab)): ?>
+      <?= $this->include('agent/admin/' . $pluginTab) ?>
       <?php endif ?>
     </div>
   </div>
