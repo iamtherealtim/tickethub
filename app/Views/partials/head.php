@@ -137,6 +137,8 @@ tailwind.config = {
   @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   .pop-in{animation:pop .16s cubic-bezier(.2,.8,.3,1) both}
   @keyframes pop{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+  .shake-no{animation:shakeNo .32s ease}
+  @keyframes shakeNo{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
   .stripe{background-image:repeating-linear-gradient(135deg,rgb(var(--th-alert) / .10) 0 6px,transparent 6px 12px)}
   input[type=checkbox]{accent-color:rgb(var(--th-brand))}
   input,select,textarea{color:rgb(var(--th-ink))}
