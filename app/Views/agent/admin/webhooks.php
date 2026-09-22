@@ -13,8 +13,8 @@ $epFields = static function (array $ep = []) use ($inputCls) {
         . '<input name="url" type="url" required value="' . esc($ep['url'] ?? '', 'attr') . '" placeholder="https://example.com/hooks/tickethub" class="' . $inputCls . ' font-mono text-[12px]"></div>'
         . '</div>'
         . '<div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Events</label>'
-        . '<div class="grid sm:grid-cols-2 gap-x-4 gap-y-1.5 rounded-lg border border-line bg-canvas p-3">'
-        . '<label class="sm:col-span-2 inline-flex items-center gap-2 text-[12.5px] font-semibold text-ink"><input type="checkbox" name="events[]" value="*" ' . ($all ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line"> All events</label>';
+        . '<div class="grid gap-y-1.5 rounded-lg border border-line bg-canvas p-3">'
+        . '<label class="inline-flex items-center gap-2 text-[12.5px] font-semibold text-ink"><input type="checkbox" name="events[]" value="*" ' . ($all ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line"> All events</label>';
     foreach (Webhooks::EVENTS as $k => $label) {
         $html .= '<label class="inline-flex items-center gap-2 text-[12.5px] text-ink-500"><input type="checkbox" name="events[]" value="' . $k . '" ' . (in_array($k, $subscribed, true) ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line"> <span class="font-mono text-[11.5px] text-faint">' . $k . '</span> ' . esc($label) . '</label>';
     }
@@ -89,7 +89,7 @@ echo '<div class="mt-3">' . th_card(th_card_head('Recent deliveries', '<span cla
 ?>
 
 <template id="tpl-addWebhook">
-  <form method="post" action="<?= site_url('app/admin/webhooks') ?>" data-modal-title="New webhook" data-modal-width="max-w-[50.4rem]" data-submit="Create webhook">
+  <form method="post" action="<?= site_url('app/admin/webhooks') ?>" data-modal-title="New webhook" data-modal-width="max-w-[58rem]" data-submit="Create webhook">
     <?= csrf_field() ?>
     <?= $epFields() ?>
   </form>
@@ -97,7 +97,7 @@ echo '<div class="mt-3">' . th_card(th_card_head('Recent deliveries', '<span cla
 
 <?php foreach ($endpoints as $ep): ?>
 <template id="tpl-editWebhook-<?= $ep['id'] ?>">
-  <div data-modal-title="Edit <?= esc($ep['name'], 'attr') ?>" data-modal-width="max-w-[50.4rem]" data-submit="Save">
+  <div data-modal-title="Edit <?= esc($ep['name'], 'attr') ?>" data-modal-width="max-w-[58rem]" data-submit="Save">
     <form method="post" action="<?= site_url('app/admin/webhooks/' . $ep['id']) ?>" data-primary>
       <?= csrf_field() ?>
       <?= $epFields($ep) ?>
