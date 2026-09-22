@@ -45,6 +45,10 @@ tailwind.config = {
   ::-webkit-scrollbar-thumb:hover{background:#A9B0BE;background-clip:content-box}
   ::-webkit-scrollbar-track{background:transparent}
   :focus-visible{outline:2px solid #0E7C6B;outline-offset:2px;border-radius:4px}
+  /* Form controls get one clean focus treatment (border + soft halo) instead of the
+     keyboard outline stacked on top of their own focus border. */
+  input:focus-visible,select:focus-visible,textarea:focus-visible,[contenteditable]:focus-visible{outline:none;outline-offset:0;border-color:#0E7C6B;box-shadow:0 0 0 3px rgba(14,124,107,.14)}
+  input[type=checkbox]:focus-visible,input[type=radio]:focus-visible{box-shadow:0 0 0 3px rgba(14,124,107,.25)}
   .sidebar ::-webkit-scrollbar-thumb{background:#333C50;background-clip:content-box}
   .burn{height:2px;background:#E9ECF1;overflow:hidden}
   .burn > i{display:block;height:100%;transition:width .4s ease}
