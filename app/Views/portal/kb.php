@@ -14,6 +14,9 @@ $list = array_values(array_filter($articles, static fn ($a) => $cat === 'All' ||
       <?= $on ? 'bg-ink text-white border-ink' : 'bg-white text-muted border-line hover:text-ink' ?>"><?= esc($c) ?></a>
     <?php endforeach ?>
   </div>
+  <?php if (! $list): ?>
+    <?= th_card(th_empty('book', $articles ? 'Nothing in this category' : 'No articles yet', $articles ? 'Pick another category above.' : 'The service desk has not published any answers yet — raise a ticket and we will help.', '<a href="' . site_url('portal/new') . '" class="inline-flex items-center h-9 px-4 rounded-lg bg-brand text-white text-[13px] font-semibold hover:bg-brand-600">Raise a ticket</a>')) ?>
+  <?php endif ?>
   <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
     <?php foreach ($list as $a): ?>
     <a href="<?= site_url('portal/kb/' . $a['id']) ?>" class="text-left bg-white border border-line rounded-xl shadow-card p-4 hover:border-brand-100 transition block">

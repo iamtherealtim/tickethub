@@ -35,6 +35,12 @@ class QueuesAndCustomFields extends Migration
 
         $this->db->table('settings')->insert(['skey' => 'default_group_id', 'svalue' => '1']);
 
+        // Everything below is demo data that assumes the seeded teams (ids 1-5),
+        // catalog items and custom fields exist. A production desk starts clean.
+        if (ENVIRONMENT === 'production') {
+            return;
+        }
+
         // Seed routing that mirrors how the demo teams are organised.
         $this->db->table('routing_rules')->insertBatch([
             ['position' => 10, 'match_type' => 'Subject contains', 'match_value' => 'password', 'group_id' => 4, 'agent_id' => null, 'priority' => null, 'active' => 1],

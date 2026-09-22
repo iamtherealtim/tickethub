@@ -18,6 +18,16 @@ class TicketHubSeeder extends Seeder
 
     public function run()
     {
+        // Demo data (shared password, fictional people, sample tickets) has no
+        // business on a live desk. Explicit opt-in only.
+        if (ENVIRONMENT === 'production' && (string) getenv('TICKETHUB_ALLOW_DEMO_SEED') !== '1') {
+            throw new \RuntimeException(
+                'TicketHubSeeder refuses to run with CI_ENVIRONMENT=production. '
+                . 'Use "php spark tickethub:setup" to create the first administrator, '
+                . 'or set TICKETHUB_ALLOW_DEMO_SEED=1 if you really want demo data.'
+            );
+        }
+
         $db  = $this->db;
         $now = date('Y-m-d H:i:s');
         $pw  = password_hash('password', PASSWORD_DEFAULT);
@@ -35,8 +45,9 @@ class TicketHubSeeder extends Seeder
             ['name' => 'Applications', 'description' => 'Business systems and integrations', 'hours_id' => 1],
         ]);
 
-        // 1-6 agents, 7-14 requesters
-        $userDefaults = ['group_id' => null, 'dept' => null, 'site' => null, 'phone' => null];
+        // 1-6 agents, 7-14 requesters. Everyone must replace the shared demo
+        // password at first sign-in (users.must_change_password, see AuthHardening).
+        $userDefaults = ['group_id' => null, 'dept' => null, 'site' => null, 'phone' => null, 'must_change_password' => 1];
         $userRows = [
             ['name' => 'Maya Ortiz', 'email' => 'maya.ortiz@tickethub.co', 'password_hash' => $pw, 'role' => 'Administrator', 'title' => 'Service Desk Lead', 'group_id' => 1, 'color' => 'brand', 'active' => 1, 'created_at' => $now, 'updated_at' => $now],
             ['name' => 'Devin Park', 'email' => 'devin.park@tickethub.co', 'password_hash' => $pw, 'role' => 'Agent', 'title' => 'Support Analyst', 'group_id' => 1, 'color' => 'violet', 'active' => 1, 'created_at' => $now, 'updated_at' => $now],

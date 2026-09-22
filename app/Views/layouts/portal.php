@@ -57,7 +57,9 @@
     <?php endif ?>
     <div class="flex items-center justify-between mt-4">
       <button data-modal="changePassword" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium text-ink-500 hover:bg-canvas"><?= th_icon('lock', 'w-4 h-4') ?> Change password</button>
-      <a href="<?= site_url('logout') ?>" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium text-muted hover:bg-canvas"><?= th_icon('logout', 'w-4 h-4') ?> Sign out</a>
+      <form method="post" action="<?= site_url('logout') ?>" class="inline"><?= csrf_field() ?>
+        <button type="submit" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium text-muted hover:bg-canvas"><?= th_icon('logout', 'w-4 h-4') ?> Sign out</button>
+      </form>
     </div>
   </div>
 </template>
@@ -69,9 +71,9 @@
       <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Current password</label>
         <input name="current" type="password" required class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
       <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">New password</label>
-        <input name="password" type="password" required minlength="8" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
+        <input name="password" type="password" required minlength="12" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
       <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Repeat the new one</label>
-        <input name="confirm" type="password" required minlength="8" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
+        <input name="confirm" type="password" required minlength="12" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
     </div>
   </form>
 </template>

@@ -49,12 +49,14 @@ const TH_CHANGE_STATE = [
     'In progress'       => 'bg-ink text-white border-ink',
     'Completed'         => 'bg-brand-50 text-brand border-brand-100',
     'Rejected'          => 'bg-[#EFF1F5] text-muted border-line',
+    'Cancelled'         => 'bg-[#EFF1F5] text-muted border-line',
 ];
 
 const TH_PROBLEM_STATUS = [
     'Root cause identified' => 'bg-signal-50 text-signal border-signal-100',
     'Under investigation'   => 'bg-violet-50 text-violet border-[#DCD8F0]',
     'Resolved'              => 'bg-brand-50 text-brand border-brand-100',
+    'Known error'           => 'bg-alert-50 text-alert border-alert-100',
 ];
 
 const TH_CATEGORIES = ['Network', 'Hardware', 'Software', 'Access', 'Email', 'Printing', 'Security', 'Facilities'];
@@ -814,7 +816,7 @@ function th_outbound_url_error(string $url): ?string
 }
 
 /** Render one admin-defined custom field (ticket_fields row) as a form control. */
-function th_custom_field(array $f): string
+function th_custom_field(array $f, ?string $value = null): string
 {
     $name  = 'cf_' . $f['id'];
     $req   = (int) $f['required'] === 1;
@@ -822,17 +824,18 @@ function th_custom_field(array $f): string
     $reqAttr = $req ? ' required' : '';
     $base  = 'w-full h-9 px-2.5 rounded-lg border border-line bg-white text-[13px] placeholder:text-faint focus:border-brand';
     $label = '<label class="block text-[12px] font-medium text-ink-500 mb-1.5">' . esc($f['label']) . $star . '</label>';
+    $val   = esc((string) $value, 'attr');
 
     switch ($f['type']) {
         case 'Paragraph':
-            $ctl = '<textarea name="' . $name . '" rows="3"' . $reqAttr . ' class="w-full px-2.5 py-2 rounded-lg border border-line text-[13px] leading-relaxed focus:border-brand"></textarea>';
+            $ctl = '<textarea name="' . $name . '" rows="3"' . $reqAttr . ' class="w-full px-2.5 py-2 rounded-lg border border-line text-[13px] leading-relaxed focus:border-brand">' . esc((string) $value) . '</textarea>';
             break;
 
         case 'Dropdown':
         case 'Lookup':
             $opts = json_decode($f['options'] ?? '[]', true) ?: [];
             if (! $opts) { // no options defined yet — degrade to free text so the form stays usable
-                $ctl = '<input name="' . $name . '" type="text"' . $reqAttr . ' class="' . $base . '">';
+                $ctl = '<input name="' . $name . '" type="text"' . $reqAttr . ' value="' . $val . '" class="' . $base . '">';
                 break;
             }
             $ctl = '<select name="' . $name . '"' . $reqAttr . ' class="' . $base . '">';
@@ -840,21 +843,21 @@ function th_custom_field(array $f): string
                 $ctl .= '<option value="">—</option>';
             }
             foreach ($opts as $o) {
-                $ctl .= '<option>' . esc($o) . '</option>';
+                $ctl .= '<option' . ((string) $o === (string) $value ? ' selected' : '') . '>' . esc($o) . '</option>';
             }
             $ctl .= '</select>';
             break;
 
         case 'Checkbox':
             return '<div class="flex items-center pt-6"><label class="inline-flex items-center gap-2 text-[13px] text-ink-500 cursor-pointer">'
-                . '<input type="checkbox" name="' . $name . '" value="Yes" class="w-[15px] h-[15px] rounded border-line"> ' . esc($f['label']) . '</label></div>';
+                . '<input type="checkbox" name="' . $name . '" value="Yes"' . ($value === 'Yes' ? ' checked' : '') . ' class="w-[15px] h-[15px] rounded border-line"> ' . esc($f['label']) . '</label></div>';
 
         case 'Date':
-            $ctl = '<input name="' . $name . '" type="date"' . $reqAttr . ' class="' . $base . ' font-mono">';
+            $ctl = '<input name="' . $name . '" type="date"' . $reqAttr . ' value="' . $val . '" class="' . $base . ' font-mono">';
             break;
 
         default: // Text
-            $ctl = '<input name="' . $name . '" type="text"' . $reqAttr . ' class="' . $base . '">';
+            $ctl = '<input name="' . $name . '" type="text"' . $reqAttr . ' value="' . $val . '" class="' . $base . '">';
     }
 
     return '<div>' . $label . $ctl . '</div>';

@@ -23,20 +23,69 @@ class AuthController extends BaseController
             return redirect()->to($this->isAgentRole() ? '/app/dashboard' : '/portal');
         }
 
+        $error = $this->session->getFlashdata('error');
+        if (! $error && $this->request->getGet('signed_out')) {
+            $error = 'Your password was changed, so this device was signed out. Sign in again.';
+        }
+
         return view('auth/login', [
-            'error'        => $this->session->getFlashdata('error'),
+            'error'        => $error,
             'azureEnabled' => Settings::get('azure_enabled') === '1' && Settings::get('azure_client_id') !== '',
         ]);
     }
 
     /* ---------- Microsoft Entra ID (Azure AD) SSO ---------- */
 
-    /** A concrete tenant GUID is mandatory — see azureCallback() for why. */
+    /**
+     * A bcrypt hash of a random string, used so a login attempt against an
+     * unknown email costs the same as one against a real account. Without it
+     * the response time reveals which emails exist.
+     */
+    private const DUMMY_HASH = '$2y$10$u8XEVazbiqADTLzbsqloiu7ioInWHMpb45SzZbky2LoF/95rYTr5i';
+
+    /**
+     * The tenant segment of the Microsoft login URL: a directory GUID, or the
+     * multi-tenant aliases "common" / "organizations". Only a GUID lets
+     * azureCallback() pin the issued token to one directory — see there.
+     */
     private function azureTenant(): ?string
     {
-        $tenant = trim(Settings::get('azure_tenant_id'));
+        $tenant = strtolower(trim(Settings::get('azure_tenant_id')));
+        if (in_array($tenant, ['common', 'organizations'], true)) {
+            return $tenant;
+        }
 
-        return preg_match('/^[0-9a-f-]{36}$/i', $tenant) ? $tenant : null;
+        return preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $tenant) ? $tenant : null;
+    }
+
+    /**
+     * Map the id_token `groups` claim onto a TicketHub role. Only active when an
+     * admin has set at least one group id; then membership decides Administrator
+     * > Agent > Requester. Returns null when the claim cannot be trusted (not
+     * configured, or Entra omitted it because the user is in too many groups).
+     */
+    private function roleFromGroups(array $claims): ?string
+    {
+        $adminGroup = strtolower(trim(Settings::get('sso_admin_group')));
+        $agentGroup = strtolower(trim(Settings::get('sso_agent_group')));
+        if ($adminGroup === '' && $agentGroup === '') {
+            return null;
+        }
+        if (! isset($claims['groups']) || ! is_array($claims['groups'])) {
+            // "hasgroups"/"_claim_names" means overage: the list must be fetched from Graph, which we do not do.
+            log_message('warning', 'Azure SSO: role mapping configured but the id_token carried no groups claim (overage or claim not enabled).');
+
+            return null;
+        }
+        $groups = array_map('strtolower', array_map('strval', $claims['groups']));
+        if ($adminGroup !== '' && in_array($adminGroup, $groups, true)) {
+            return 'Administrator';
+        }
+        if ($agentGroup !== '' && in_array($agentGroup, $groups, true)) {
+            return 'Agent';
+        }
+
+        return 'Requester';
     }
 
     public function azure()
@@ -134,8 +183,12 @@ class AuthController extends BaseController
             $nonce  = (string) $this->session->get('azure_nonce');
             $this->session->remove('azure_nonce');
 
+            // With "common"/"organizations" there is no single tenant to pin to, so
+            // only the audience/nonce/expiry checks apply — any work account may
+            // sign in, which is why the admin page recommends a GUID.
+            $pinned = ! in_array($tenant, ['common', 'organizations'], true);
             if (! $claims
-                || ! hash_equals(strtolower($tenant), strtolower((string) ($claims['tid'] ?? '')))
+                || ($pinned && ! hash_equals(strtolower($tenant), strtolower((string) ($claims['tid'] ?? ''))))
                 || ! hash_equals(Settings::get('azure_client_id'), (string) ($claims['aud'] ?? ''))
                 || ($nonce !== '' && ! hash_equals($nonce, (string) ($claims['nonce'] ?? '')))
                 || (int) ($claims['exp'] ?? 0) < time()) {
@@ -178,22 +231,45 @@ class AuthController extends BaseController
             }
         }
 
+        $mappedRole = $this->roleFromGroups($claims);
+
         if (! $user) {
             if (Settings::get('azure_autoprovision') !== '1') {
                 $this->session->setFlashdata('error', 'Microsoft sign-in failed: no matching account. Ask an administrator to invite you.');
 
                 return redirect()->to('/login');
             }
-            $now = date('Y-m-d H:i:s');
+            $now  = date('Y-m-d H:i:s');
+            $role = $mappedRole ?? 'Requester';
             $this->db->table('users')->insert([
                 'name' => $name, 'email' => $email,
                 'password_hash' => password_hash(bin2hex(random_bytes(24)), PASSWORD_DEFAULT),
-                'role' => 'Requester', 'title' => 'Employee',
+                'role' => $role, 'title' => $role === 'Requester' ? 'Employee' : 'Support Analyst',
+                'group_id' => $role === 'Requester' ? null : ((int) Settings::get('default_group_id', '1') ?: null),
                 'color' => ['brand', 'ink', 'violet', 'signal'][random_int(0, 3)],
                 'active' => 1, 'azure_oid' => $azureOid ?: null,
                 'created_at' => $now, 'updated_at' => $now,
             ]);
             $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+            Audit::log('sso.provisioned', $email . ' as ' . $role, (int) $user['id']);
+        } elseif ($mappedRole !== null && $mappedRole !== $user['role']) {
+            // Directory group membership is the source of truth once mapping is on.
+            // Supervisor has no directory equivalent, so it is only ever set by hand.
+            $lastAdmin = $user['role'] === 'Administrator'
+                && $this->db->table('users')->where('role', 'Administrator')->where('active', 1)->countAllResults() <= 1;
+            if ($user['role'] === 'Supervisor' && $mappedRole === 'Agent') {
+                // Keep the manual promotion.
+            } elseif ($lastAdmin) {
+                log_message('warning', 'Azure SSO: refusing to demote the last active Administrator ({email}) via group mapping.', ['email' => $email]);
+            } else {
+                $update = ['role' => $mappedRole, 'updated_at' => date('Y-m-d H:i:s')];
+                if ($mappedRole !== 'Requester' && empty($user['group_id'])) {
+                    $update['group_id'] = (int) Settings::get('default_group_id', '1') ?: null;
+                }
+                $this->db->table('users')->where('id', $user['id'])->update($update);
+                Audit::log('sso.role_mapped', $email . ' ' . $user['role'] . ' → ' . $mappedRole, (int) $user['id']);
+                $user['role'] = $mappedRole;
+            }
         }
 
         if (! (int) $user['active']) {
@@ -204,9 +280,10 @@ class AuthController extends BaseController
 
         $this->session->regenerate();
         $this->session->set([
-            'user_id' => (int) $user['id'],
-            'role'    => $user['role'],
-            'name'    => $user['name'],
+            'user_id'       => (int) $user['id'],
+            'role'          => $user['role'],
+            'name'          => $user['name'],
+            'session_epoch' => (int) ($user['session_epoch'] ?? 0),
         ]);
         $agent = in_array($user['role'], ['Administrator', 'Supervisor', 'Agent'], true);
         $this->toast('Welcome back, ' . explode(' ', $user['name'])[0]);
@@ -235,7 +312,12 @@ class AuthController extends BaseController
 
         $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
 
-        if (! $user || ! password_verify($password, $user['password_hash'])) {
+        // Constant-time-ish: unknown emails still pay for one bcrypt verify.
+        $ok = $user
+            ? password_verify($password, $user['password_hash'])
+            : (password_verify($password, self::DUMMY_HASH) && false);
+
+        if (! $ok) {
             Audit::log('login.failed', $email);
             $this->session->setFlashdata('error', 'That email and password combination does not match.');
 
@@ -256,9 +338,10 @@ class AuthController extends BaseController
 
         $this->session->regenerate();
         $this->session->set([
-            'user_id' => (int) $user['id'],
-            'role'    => $user['role'],
-            'name'    => $user['name'],
+            'user_id'       => (int) $user['id'],
+            'role'          => $user['role'],
+            'name'          => $user['name'],
+            'session_epoch' => (int) ($user['session_epoch'] ?? 0),
         ]);
         if ($this->request->getPost('remember')) {
             $this->issueRememberCookie((int) $user['id']);
@@ -269,6 +352,20 @@ class AuthController extends BaseController
         $this->toast('Welcome back, ' . explode(' ', $user['name'])[0]);
 
         return redirect()->to($agent ? '/app/dashboard' : '/portal');
+    }
+
+    /**
+     * GET /logout: a link cannot carry a CSRF token, so it renders a tiny page
+     * that immediately POSTs the real logout. Stops third-party pages from
+     * signing people out with an <img src="/logout">.
+     */
+    public function logoutConfirm()
+    {
+        if (! $this->me) {
+            return redirect()->to('/login');
+        }
+
+        return view('auth/logout');
     }
 
     public function logout()
@@ -373,6 +470,8 @@ class AuthController extends BaseController
             'remember_selector' => null, 'remember_validator' => null, 'remember_expires' => null,
             'must_change_password' => 0,
         ]);
+        // Every existing session for this account is now stale (see App\Filters\SessionEpoch).
+        $this->db->table('users')->where('email', $row['email'])->set('session_epoch', 'session_epoch + 1', false)->update();
         $this->db->table('password_resets')->where('email', $row['email'])->delete();
         Audit::log('password.reset_completed', $row['email']);
         $this->session->setFlashdata('error', '');

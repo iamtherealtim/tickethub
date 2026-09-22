@@ -39,7 +39,15 @@ class Logger extends BaseConfig
      *
      * @var int|list<int>
      */
-    public $threshold = (ENVIRONMENT === 'production') ? 4 : 9;
+    public $threshold = 9;
+
+    public function __construct()
+    {
+        parent::__construct();
+
+        // Production: errors and above only (4). Everything else: log it all (9).
+        $this->threshold = ENVIRONMENT === 'production' ? 4 : 9;
+    }
 
     /**
      * --------------------------------------------------------------------------

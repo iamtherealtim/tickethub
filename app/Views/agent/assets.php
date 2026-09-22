@@ -11,10 +11,11 @@
       <?php if ($pdqConfigured && $isAdmin): ?>
       <form method="post" action="<?= site_url('app/admin/pdq/sync') ?>" class="flex items-center gap-2">
         <?= csrf_field() ?>
-        <?php if ($pdqLastSync): ?><span class="text-[11.5px] text-faint hidden md:block">PDQ synced <?= th_rel($pdqLastSync) ?></span><?php endif ?>
+        <?php if ($pdqLastSync): ?><span class="text-[11.5px] <?= ! empty($pdqLastError) ? 'text-alert' : 'text-faint' ?> hidden md:block" title="<?= esc($pdqLastError ?? '', 'attr') ?>">PDQ synced <?= th_rel($pdqLastSync) ?><?= ! empty($pdqLastError) ? ' · last run failed' : '' ?></span><?php endif ?>
         <?= th_btn('Sync from PDQ', 'type="submit"', 'ghost', 'refresh') ?>
       </form>
       <?php endif ?>
+      <?php if (! empty($canManage)): ?><?= th_btn('Import', 'data-modal="importAssets"', 'ghost', 'clip') ?><?php endif ?>
       <?= th_btn('Add asset', 'data-modal="addAsset"', 'brand', 'plus') ?>
     </div>
   </div>
@@ -71,9 +72,32 @@
     <?= th_pager($total, $page, $perPage, site_url('app/assets'), array_filter(['q' => $q, 'type' => $type])) ?>
   </section>
 </div>
+<?php if (! empty($importOpen) && ! empty($canManage)): ?>
+<script>
+  // /app/assets/import is the list with the import dialog already open.
+  document.addEventListener('DOMContentLoaded', function () {
+    var b = document.querySelector('[data-modal="importAssets"]');
+    if (b) b.click();
+  });
+</script>
+<?php endif ?>
 <?= $this->endSection() ?>
 
 <?= $this->section('modals') ?>
+<?php if (! empty($canManage)): ?>
+<template id="tpl-importAssets">
+  <form method="post" action="<?= site_url('app/assets/import') ?>" enctype="multipart/form-data" data-modal-title="Import assets from CSV" data-modal-sub="Existing assets are matched on serial, then on name, and updated; the rest are created." data-submit="Import">
+    <?= csrf_field() ?>
+    <label class="block text-[12px] font-medium text-ink-500 mb-1.5">CSV file<span class="text-alert"> *</span></label>
+    <input type="file" name="csv" accept=".csv,text/csv" required class="w-full text-[12.5px] text-muted file:mr-3 file:h-8 file:px-3 file:rounded-lg file:border file:border-line file:bg-white file:text-[12.5px] file:font-medium file:text-ink-500 file:cursor-pointer">
+    <div class="mt-3 rounded-lg bg-canvas border border-line p-3 text-[12px] text-muted leading-relaxed">
+      <div class="font-semibold text-ink-500 mb-1">Header row</div>
+      <code class="font-mono text-[11.5px]">name,type,model,serial,status,site,holder_email</code>
+      <p class="mt-1.5">Only <code class="font-mono">name</code> is required. Type: Laptop, Mobile, Printer, Server, Switch, Dock or License. Status: <?= esc(implode(', ', array_keys(TH_ASSET_STATUS))) ?>. The holder must be an existing active user's email.</p>
+    </div>
+  </form>
+</template>
+<?php endif ?>
 <template id="tpl-addAsset">
   <form method="post" action="<?= site_url('app/assets') ?>" data-modal-title="Add asset" data-submit="Add asset">
     <?= csrf_field() ?>

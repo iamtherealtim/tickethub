@@ -104,4 +104,14 @@ class Cookie extends BaseConfig
      * @see https://tools.ietf.org/html/rfc2616#section-2.2
      */
     public bool $raw = false;
+
+    public function __construct()
+    {
+        parent::__construct();
+
+        // Production is HTTPS-only (see App::$forceGlobalSecureRequests), so the
+        // session/CSRF cookies must never travel over plain HTTP there. Dev runs on
+        // http://localhost, where a Secure cookie would simply never be sent.
+        $this->secure = ENVIRONMENT === 'production';
+    }
 }

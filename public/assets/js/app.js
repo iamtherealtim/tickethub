@@ -89,15 +89,28 @@
     if (name === 'palette') initPalette();
   }
 
-  /* Fetch server-rendered modal fragment. Fragment root carries data-modal-title etc. */
+  /* Fetch server-rendered modal fragment. Fragment root carries data-modal-title etc.
+     A non-2xx answer (expired session, missing record) or a network failure is
+     said out loud rather than swallowed — a click that does nothing reads as a bug. */
   function openFetchModal(url) {
     fetchFragment(url)
-      .then((r) => r.text())
+      .then((r) => {
+        if (!r.ok) {
+          const why = r.status === 401 || r.status === 403 ? 'Your session may have expired — reload the page'
+            : r.status === 404 ? 'That record no longer exists'
+            : 'The server answered ' + r.status;
+          throw new Error(why);
+        }
+        return r.text();
+      })
       .then((html) => {
         const wrap = document.createElement('div');
         wrap.innerHTML = html.trim();
         const node = wrap.firstElementChild;
-        if (!node) return;
+        if (!node) {
+          toast('Nothing came back to show', 'warn');
+          return;
+        }
         const isForm = node.tagName === 'FORM';
         const footer = node.dataset.modalFooter ||
           (isForm
@@ -106,7 +119,31 @@
             : '');
         openModalShell(node.dataset.modalTitle, node.dataset.modalSub, node.dataset.modalWidth, node, footer);
         initLiveSearch();
+      })
+      .catch((err) => {
+        toast((err && err.message && !/fetch/i.test(err.message)) ? err.message : 'Could not load that — check your connection and try again', 'bad');
       });
+  }
+
+  /* Copy-to-clipboard for <button data-copy="text">: Share links and the like.
+     Falls back to a hidden textarea + execCommand where the async API is unavailable (http, old browsers). */
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise((resolve, reject) => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+      ok ? resolve() : reject(new Error('copy failed'));
+    });
   }
 
   /* Live search inside a picker dialog (merge, problem linking) — re-renders
@@ -496,6 +533,13 @@
     }
     if ((el = hit('[data-fetch-modal]'))) {
       openFetchModal(el.dataset.fetchModal);
+      return;
+    }
+    if ((el = hit('[data-copy]'))) {
+      e.preventDefault();
+      copyText(el.dataset.copy)
+        .then(() => toast('Copied'))
+        .catch(() => toast('Could not copy — ' + el.dataset.copy, 'warn'));
       return;
     }
     if ((el = hit('[data-action="openNav"]'))) {

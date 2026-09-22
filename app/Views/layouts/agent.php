@@ -71,8 +71,11 @@
       <?php endif ?>
       <button data-modal="newTicket" class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-brand hover:bg-brand-600 text-white text-[13px] font-semibold transition">
         <?= th_icon('plus', 'w-4 h-4') ?> <span class="hidden sm:inline">New ticket</span></button>
-      <button data-fetch-modal="<?= site_url('app/notifications') ?>" class="relative w-9 h-9 grid place-items-center rounded-lg text-muted hover:bg-canvas" aria-label="Notifications">
-        <?= th_icon('bell', 'w-[18px] h-[18px]') ?><?php if (! empty($overdueCount) || ! empty($navApprovals)): ?><i class="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-alert"></i><?php endif ?></button>
+      <button data-fetch-modal="<?= site_url('app/notifications') ?>" class="relative w-9 h-9 grid place-items-center rounded-lg text-muted hover:bg-canvas" aria-label="Notifications<?= ! empty($unreadCount) ? ' (' . (int) $unreadCount . ' unread)' : '' ?>">
+        <?= th_icon('bell', 'w-[18px] h-[18px]') ?>
+        <?php if (! empty($unreadCount)): ?>
+          <span class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-alert text-white text-[10.5px] font-bold leading-[18px] text-center font-mono"><?= (int) $unreadCount > 99 ? '99+' : (int) $unreadCount ?></span>
+        <?php elseif (! empty($overdueCount) || ! empty($navApprovals)): ?><i class="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-alert"></i><?php endif ?></button>
       <button data-modal="userMenu" class="lg:hidden"><?= th_avatar($me, 30) ?></button>
     </header>
     <main id="view" class="flex-1 overflow-y-auto">
@@ -158,7 +161,9 @@
     </div>
     <div class="flex items-center justify-between mt-4">
       <button data-modal="changePassword" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium text-ink-500 hover:bg-canvas"><?= th_icon('lock', 'w-4 h-4') ?> Change password</button>
-      <a href="<?= site_url('logout') ?>" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium text-muted hover:bg-canvas"><?= th_icon('logout', 'w-4 h-4') ?> Sign out</a>
+      <form method="post" action="<?= site_url('logout') ?>" class="inline"><?= csrf_field() ?>
+        <button type="submit" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium text-muted hover:bg-canvas"><?= th_icon('logout', 'w-4 h-4') ?> Sign out</button>
+      </form>
     </div>
   </div>
 </template>

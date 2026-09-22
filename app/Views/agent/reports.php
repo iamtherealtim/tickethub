@@ -15,7 +15,7 @@
             }
         }
       ?>
-      <p class="text-[13px] text-muted mt-1">Last <?= $range ?> days · <?= esc($scope) ?> · <span class="font-mono"><?= $ticketsInRange ?></span> ticket(s) in range</p>
+      <p class="text-[13px] text-muted mt-1">Last <?= $range ?> days · <?= esc($scope) ?> · <span class="font-mono"><?= $ticketsInRange ?></span> raised · <span class="font-mono"><?= $resolvedN ?></span> resolved in window</p>
     </div>
     <div class="flex items-center gap-2">
       <form method="get" action="<?= site_url('app/reports') ?>" class="flex items-center gap-2">
@@ -27,23 +27,24 @@
     </div>
   </div>
 
-  <?php if ($ticketsInRange === 0): ?>
-    <?= th_card(th_empty('chart', 'No tickets in this window', 'Nothing was raised in the last ' . $range . ' days for this scope. Try a longer range.')) ?>
+  <?php if ($ticketsInRange === 0 && $resolvedN === 0): ?>
+    <?= th_card(th_empty('chart', 'No tickets in this window', 'Nothing was raised or resolved in the last ' . $range . ' days for this scope. Try a longer range.')) ?>
   <?php else: ?>
+  <?php // Two populations: "raised in window" (created_at) and "resolved in window" (resolved_at). Each tile says which. ?>
   <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-4">
-    <?= th_kpi('Median first response', $medianFr ? th_dur($medianFr) : '—', 'Across answered tickets', 'brand') ?>
-    <?= th_kpi('Median resolution', $medianRes ? th_dur($medianRes) : '—', 'Across resolved tickets', 'brand') ?>
-    <?= th_kpi('SLA attainment', $slaPct === null ? '—' : $slaPct . '%', $slaPct === null ? 'Nothing resolved yet' : 'Resolution, all priorities', ($slaPct ?? 0) >= 90 ? 'brand' : 'signal') ?>
-    <?= th_kpi('Resolved total', $resolvedN, 'In the selected window') ?>
+    <?= th_kpi('Median first response', $medianFr ? th_dur($medianFr) : '—', 'Raised in window · answered', 'brand') ?>
+    <?= th_kpi('Median resolution', $medianRes ? th_dur($medianRes) : '—', 'Resolved in window', 'brand') ?>
+    <?= th_kpi('SLA attainment', $slaPct === null ? '—' : $slaPct . '%', $slaPct === null ? 'Nothing resolved in window' : 'Resolved in window, all priorities', ($slaPct ?? 0) >= 90 ? 'brand' : 'signal') ?>
+    <?= th_kpi('Resolved', $resolvedN, 'Resolved in window, whenever raised') ?>
     <?php // Low is good here — a high rate means "Resolved" is being called too early. ?>
     <?= th_kpi(
         'Reopen rate',
         $reopenPct === null ? '—' : $reopenPct . '%',
-        $reopenPct === null ? 'Nothing resolved yet' : $reopenedN . ' of ' . $resolvedN . ' resolved',
+        $reopenPct === null ? 'Nothing resolved in window' : $reopenedN . ' of ' . $resolvedN . ' resolved in window',
         ($reopenPct ?? 0) > 10 ? 'alert' : 'ink'
     ) ?>
-    <?= th_kpi('Time logged', $timeTotal ? th_minutes($timeTotal) : '—', $timeTotal ? 'Across the window' : 'Nothing logged yet', 'brand') ?>
-    <?= th_kpi('Effort per ticket', $timePerTicket ? th_minutes($timePerTicket) : '—', 'Mean across all raised') ?>
+    <?= th_kpi('Time logged', $timeTotal ? th_minutes($timeTotal) : '—', $timeTotal ? 'On tickets raised in window' : 'Nothing logged yet', 'brand') ?>
+    <?= th_kpi('Effort per ticket', $timePerTicket ? th_minutes($timePerTicket) : '—', 'Mean · raised in window') ?>
   </div>
 
   <?php if ($timeByAgent || $timeByCategory): ?>
@@ -114,16 +115,16 @@
     }
     $rows = '';
     foreach ($groupPerf as $p) {
-        $tone = $p['pct'] >= 90 ? 'text-brand' : ($p['pct'] >= 75 ? 'text-signal' : 'text-alert');
+        $tone = $p['pct'] === null ? 'text-faint' : ($p['pct'] >= 90 ? 'text-brand' : ($p['pct'] >= 75 ? 'text-signal' : 'text-alert'));
         $rows .= '<div><div class="flex items-center justify-between text-[12.5px] mb-1.5">'
             . '<span class="font-medium text-ink">' . esc($p['g']['name']) . '</span>'
             . '<span class="flex items-center gap-3 font-mono text-[11.5px]">'
-            . '<span class="text-muted">' . $p['n'] . ' tickets</span>'
+            . '<span class="text-muted">' . $p['n'] . ' raised · ' . $p['resolved'] . ' resolved</span>'
             . '<span class="text-ink-500">' . ($p['avg'] ? th_dur($p['avg']) : '—') . '</span>'
-            . '<span class="' . $tone . '">' . $p['pct'] . '% SLA</span></span></div>'
+            . '<span class="' . $tone . '" title="' . ($p['pct'] === null ? 'No resolutions in window' : 'Resolved within SLA, of those resolved in window') . '">' . ($p['pct'] === null ? '—' : $p['pct'] . '%') . ' SLA</span></span></div>'
             . '<div class="h-2 rounded-full bg-canvas overflow-hidden"><div class="h-full rounded-full bg-brand" style="width:' . ($p['avg'] / $maxAvg) * 100 . '%"></div></div></div>';
     }
-    echo th_card(th_card_head('Group performance', '<span class="text-muted">Avg resolution time and SLA attainment</span>')
+    echo th_card(th_card_head('Group performance', '<span class="text-muted">Raised in window · resolved in window · avg resolution · SLA attainment</span>')
         . '<div class="p-4 space-y-3.5">' . $rows . '</div>');
   ?>
   <?php endif ?>

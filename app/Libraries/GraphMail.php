@@ -90,12 +90,55 @@ class GraphMail
         return $out;
     }
 
-    /** Fetch unread messages, process them, mark them read. Returns human-readable action lines. */
+    /**
+     * Fetch unread messages, process them, mark them read. Returns human-readable action lines.
+     *
+     * Serialised through a lock file: the cron and Admin → "Fetch now" can run at
+     * the same moment, and two polls reading the same unread list would file
+     * every message twice before either marked it read.
+     */
     public static function poll(int $limit = 25): array
     {
         if (! self::configured()) {
             return ['Graph mailbox polling is not configured.'];
         }
+        $lockPath = WRITEPATH . 'cache/graph-poll.lock';
+        if (! is_dir(dirname($lockPath))) {
+            @mkdir(dirname($lockPath), 0775, true);
+        }
+        $lock = @fopen($lockPath, 'c');
+        if ($lock && ! flock($lock, LOCK_EX | LOCK_NB)) {
+            fclose($lock);
+
+            return ['A mailbox poll is already running — skipped this one.'];
+        }
+        try {
+            return self::pollLocked($limit);
+        } finally {
+            if ($lock) {
+                flock($lock, LOCK_UN);
+                fclose($lock);
+            }
+        }
+    }
+
+    /** Pull the headers we thread and loop-guard on out of Graph's header list. */
+    private static function headerMap(array $msg): array
+    {
+        $want = ['auto-submitted', 'x-auto-response-suppress', 'precedence', 'in-reply-to', 'references', 'x-autoreply', 'x-autorespond'];
+        $out  = [];
+        foreach ((array) ($msg['internetMessageHeaders'] ?? []) as $h) {
+            $name = strtolower((string) ($h['name'] ?? ''));
+            if (in_array($name, $want, true) && ! isset($out[$name])) {
+                $out[$name] = (string) ($h['value'] ?? '');
+            }
+        }
+
+        return $out;
+    }
+
+    private static function pollLocked(int $limit): array
+    {
         $token = self::token();
         if (! $token) {
             return ['Could not get a Graph token — check the tenant/client/secret under Single sign-on and the Mail.ReadWrite application permission.'];
@@ -108,7 +151,7 @@ class GraphMail
         $res = $client->get(
             'https://graph.microsoft.com/v1.0/users/' . $mailbox . '/mailFolders/Inbox/messages'
             . '?$filter=isRead%20eq%20false&$top=' . $limit . '&$orderby=receivedDateTime%20asc'
-            . '&$select=id,subject,from,body,bodyPreview,receivedDateTime,hasAttachments',
+            . '&$select=id,subject,from,body,bodyPreview,receivedDateTime,hasAttachments,internetMessageId,internetMessageHeaders',
             ['headers' => $headers]
         );
         $json = json_decode((string) $res->getBody(), true) ?: [];
@@ -135,12 +178,25 @@ class GraphMail
                 $text = (string) ($msg['bodyPreview'] ?? '');
             }
 
-            $atts = ! empty($msg['hasAttachments']) ? self::fetchAttachments($client, $headers, $mailbox, (string) $msg['id']) : [];
+            // Attachments are fetched lazily: intake only asks for them once the
+            // sender has been accepted, so dropped mail leaves nothing on disk.
+            $atts    = [];
+            $fetch   = static function () use (&$atts, $client, $headers, $mailbox, $msg) {
+                return $atts = ! empty($msg['hasAttachments']) ? self::fetchAttachments($client, $headers, $mailbox, (string) $msg['id']) : [];
+            };
+            $hmap = self::headerMap($msg);
+            $meta = [
+                'message_id'  => (string) ($msg['internetMessageId'] ?? ''),
+                'from_name'   => (string) ($msg['from']['emailAddress']['name'] ?? ''),
+                'in_reply_to' => $hmap['in-reply-to'] ?? '',
+                'references'  => $hmap['references'] ?? '',
+                'headers'     => $hmap,
+            ];
 
-            $result = $intake->inboundEmail($from, $subject, $text, $atts);
+            $result = $intake->inboundEmail($from, $subject, $text, $fetch, $meta);
             $actions[] = $result['ok']
                 ? $result['ticket'] . ' ' . $result['action'] . ' (from ' . $from . ')' . ($atts ? ' with ' . count($atts) . ' attachment(s)' : '')
-                : 'Skipped message from ' . ($from ?: '?') . ' — ' . $result['reason'];
+                : ucfirst($result['action']) . ' message from ' . ($from ?: '?') . ' — ' . $result['reason'];
 
             // Mark processed messages read so they are not ingested twice.
             $patch = $client->patch(

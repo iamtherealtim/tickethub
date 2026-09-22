@@ -101,7 +101,7 @@ abstract class BaseController extends Controller
             return;
         }
         $this->session->regenerate();
-        $this->session->set(['user_id' => (int) $user['id'], 'role' => $user['role'], 'name' => $user['name']]);
+        $this->session->set(['user_id' => (int) $user['id'], 'role' => $user['role'], 'name' => $user['name'], 'session_epoch' => (int) ($user['session_epoch'] ?? 0)]);
         $this->issueRememberCookie((int) $user['id']); // rotate the validator on every use
     }
 
@@ -197,12 +197,24 @@ abstract class BaseController extends Controller
      */
     protected function canSeeTicket(array $t): bool
     {
+        if (! $this->me) {
+            return false;
+        }
         if ($this->isAdmin()) {
             return true;
         }
+        $me = (int) $this->me['id'];
+        // Requesters (API tokens can belong to one) only ever see their own tickets;
+        // group membership means nothing for them, and a NULL group must not
+        // match a NULL group.
+        if (! $this->isAgentRole()) {
+            return (int) ($t['requester_id'] ?? 0) === $me;
+        }
+        $myGroup = (int) ($this->me['group_id'] ?? 0);
+        $tGroup  = (int) ($t['group_id'] ?? 0);
 
-        return (int) $t['group_id'] === (int) ($this->me['group_id'] ?? 0)
-            || (int) ($t['agent_id'] ?? 0) === (int) $this->me['id'];
+        return ($myGroup > 0 && $tGroup === $myGroup)
+            || (int) ($t['agent_id'] ?? 0) === $me;
     }
 
     /** Filter a ticket array down to what the current agent may see. */
@@ -213,6 +225,69 @@ abstract class BaseController extends Controller
         }
 
         return array_values(array_filter($tickets, fn ($t) => $this->canSeeTicket($t)));
+    }
+
+    /**
+     * The same visibility rule as canSeeTicket(), as a WHERE clause on a tickets
+     * query builder, so lists and counts can be done in SQL instead of loading
+     * every ticket and filtering in PHP. $alias is the table alias if any.
+     */
+    protected function scopeWhere($builder, string $alias = '')
+    {
+        if ($this->isAdmin()) {
+            return $builder;
+        }
+        $p  = $alias !== '' ? $alias . '.' : '';
+        $me = (int) ($this->me['id'] ?? 0);
+        if (! $this->isAgentRole()) {
+            return $builder->where($p . 'requester_id', $me);
+        }
+        $myGroup = (int) ($this->me['group_id'] ?? 0);
+        $builder->groupStart()->where($p . 'agent_id', $me);
+        if ($myGroup > 0) {
+            $builder->orWhere($p . 'group_id', $myGroup);
+        }
+
+        return $builder->groupEnd();
+    }
+
+    /** May the current user hand a ticket to this agent? */
+    protected function canAssignTo(?int $agentId): bool
+    {
+        if (! $agentId) {
+            return true; // unassign is always allowed
+        }
+        foreach ($this->assignableAgents() as $a) {
+            if ((int) $a['id'] === $agentId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * May the current user move a ticket into this group? Administrators: any
+     * existing group. Everyone else: only their own group — or the group the
+     * ticket is already in (a no-op move is not an escape).
+     */
+    protected function canUseGroup(int $groupId, ?array $ticket = null): bool
+    {
+        if ($groupId <= 0 || ! $this->db->table('groups')->where('id', $groupId)->countAllResults()) {
+            return false;
+        }
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        return $groupId === (int) ($this->me['group_id'] ?? 0)
+            || ($ticket && $groupId === (int) ($ticket['group_id'] ?? 0));
+    }
+
+    /** Re-read a ticket row with a row lock; call inside a transaction. */
+    protected function lockTicket(int $id): ?array
+    {
+        return $this->db->query('SELECT * FROM tickets WHERE id = ? FOR UPDATE', [$id])->getRowArray();
     }
 
     /** Agents this user may assign work to (own group for non-admins). */
@@ -241,21 +316,28 @@ abstract class BaseController extends Controller
     {
         $awaiting = $this->db->table('changes')->where('state', 'Awaiting approval')->countAllResults();
 
-        $open = $this->scopeTickets($this->db->table('tickets')->whereIn('status', TH_OPEN_STATES)->get()->getResultArray());
-        $overdue = 0;
-        foreach ($open as $t) {
-            if (th_sla($t)['remaining'] <= 0) {
-                $overdue++;
-            }
+        // Two counts, not a full table load: open tickets in scope, and those past
+        // their resolution target with the clock still running.
+        $openCount = (int) $this->scopeWhere($this->db->table('tickets')->whereIn('status', TH_OPEN_STATES))->countAllResults();
+        $overdue   = (int) $this->scopeWhere(
+            $this->db->table('tickets')->whereIn('status', TH_OPEN_STATES)->where('res_due <', date('Y-m-d H:i:s'))->where('paused_at', null)
+        )->countAllResults();
+
+        $unread = 0;
+        try {
+            $unread = (int) $this->db->table('notifications')->where('user_id', (int) $this->me['id'])->where('read_at', null)->countAllResults();
+        } catch (\Throwable $e) {
+            // table not migrated yet — the bell just has no badge
         }
 
         return [
             'me'            => $this->me,
             'isAdmin'       => $this->isAdmin(),
             'assignableAgents' => $this->assignableAgents(),
-            'navOpenCount'  => count($open),
+            'navOpenCount'  => $openCount,
             'navApprovals'  => $awaiting,
             'overdueCount'  => $overdue,
+            'unreadCount'   => $unread,
             'groups'        => $this->db->table('groups')->orderBy('id')->get()->getResultArray(),
             'agents'        => $this->db->table('users')->whereIn('role', ['Administrator', 'Supervisor', 'Agent'])->orderBy('id')->get()->getResultArray(),
             'requesters'    => $this->db->table('users')->where('role', 'Requester')->orderBy('name')->get()->getResultArray(),
@@ -289,19 +371,33 @@ abstract class BaseController extends Controller
         return $this->db->table('tickets')->where('code', $code)->get()->getRowArray();
     }
 
+    /**
+     * Next ticket code. Only safe while TicketIntake::withCodeLock() is held —
+     * createTicket() does that for you; prefer it over calling this directly.
+     */
     protected function nextTicketCode(string $type): string
     {
-        $prefix = $type === 'Incident' ? 'INC' : 'SR';
-        $row = $this->db->query(
-            "SELECT MAX(CAST(SUBSTRING_INDEX(code,'-',-1) AS UNSIGNED)) AS n FROM tickets WHERE code LIKE ?",
-            [$prefix . '-%']
-        )->getRowArray();
-        $n = (int) ($row['n'] ?? 0);
-        if ($n === 0) {
-            $n = $prefix === 'INC' ? 2100 : 4400;
-        }
+        return \App\Libraries\TicketIntake::nextTicketCode($type);
+    }
 
-        return $prefix . '-' . ($n + 1);
+    /**
+     * Persist an in-app notification for each user (the bell). The current user
+     * is never told about their own action.
+     */
+    protected function notifyUsers(array $userIds, string $kind, string $title, ?string $url = null, ?int $ticketId = null, string $body = ''): void
+    {
+        \App\Libraries\TicketIntake::notifyUsers($userIds, $kind, $title, $url, $ticketId, (int) ($this->me['id'] ?? 0) ?: null, $body);
+    }
+
+    /** Tell the group's supervisors/administrators that a request awaits their decision. */
+    protected function notifyApprovalRequested(int $ticketId, string $requiredOf): void
+    {
+        $t = $this->db->table('tickets')->where('id', $ticketId)->get()->getRowArray();
+        if (! $t) {
+            return;
+        }
+        $ids = array_map('intval', array_column(\App\Libraries\TicketIntake::groupApprovers((int) $t['group_id']), 'id'));
+        $this->notifyUsers($ids, 'approval', $t['code'] . ' needs ' . $requiredOf . ' approval', site_url('app/tickets/' . $t['code']), $ticketId, $t['subject']);
     }
 
     /** Fire a notification template for a ticket; never throws. */
@@ -327,10 +423,21 @@ abstract class BaseController extends Controller
             'body' => $body, 'attachments' => '[]', 'created_at' => date('Y-m-d H:i:s'),
         ]);
         $this->db->table('tickets')->where('id', $ticketId)->update(['updated_at' => date('Y-m-d H:i:s')]);
+
+        // Every path that parks a request behind an approver writes this exact
+        // note (catalog, portal). Hooking it here means the approvers are told
+        // without each caller having to remember to say so.
+        if (preg_match('/^Waiting on (.+) approval$/', $body, $m)) {
+            $this->notifyApprovalRequested($ticketId, $m[1]);
+        }
     }
 
-    /** Store posted custom-field values (inputs named cf_{id}) for a ticket. */
-    protected function saveCustomFields(int $ticketId, string $audience): void
+    /**
+     * Store posted custom-field values (inputs named cf_{id}) for a ticket.
+     * Upserts, so the same call serves creation and later edits; with
+     * $clearEmpty an emptied input removes the stored value.
+     */
+    protected function saveCustomFields(int $ticketId, string $audience, bool $clearEmpty = false): void
     {
         $fields = $this->db->table('ticket_fields')->where($audience, 1)->get()->getResultArray();
         foreach ($fields as $f) {
@@ -339,11 +446,17 @@ abstract class BaseController extends Controller
                 $value = $value ? 'Yes' : 'No';
             }
             if ($value === null || trim((string) $value) === '') {
+                if ($clearEmpty && $value !== null) {
+                    $this->db->table('ticket_field_values')->where('ticket_id', $ticketId)->where('field_id', $f['id'])->delete();
+                }
+
                 continue;
             }
-            $this->db->table('ticket_field_values')->insert([
-                'ticket_id' => $ticketId, 'field_id' => $f['id'], 'value' => mb_substr(trim((string) $value), 0, 2000),
-            ]);
+            $this->db->query(
+                'INSERT INTO ticket_field_values (ticket_id, field_id, value) VALUES (?, ?, ?)
+                 ON DUPLICATE KEY UPDATE value = VALUES(value)',
+                [$ticketId, (int) $f['id'], mb_substr(trim((string) $value), 0, 2000)]
+            );
         }
     }
 

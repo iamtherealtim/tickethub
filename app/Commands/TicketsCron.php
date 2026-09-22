@@ -17,12 +17,36 @@ class TicketsCron extends BaseCommand
     {
         helper('tickethub');
 
-        $actions = (new AutomationEngine())->run();
-        if (GraphMail::configured()) {
-            $actions = array_merge($actions, GraphMail::poll());
+        // One pass at a time. A slow mailbox poll overlapping the next scheduled
+        // run would evaluate the same rules and ingest the same mail twice.
+        $lockPath = WRITEPATH . 'cache/tickets-cron.lock';
+        if (! is_dir(dirname($lockPath))) {
+            @mkdir(dirname($lockPath), 0775, true);
         }
-        if ($pdq = \App\Libraries\PdqConnect::maybeAutoSync()) {
-            $actions[] = $pdq;
+        $lock = fopen($lockPath, 'c');
+        if (! $lock) {
+            CLI::error('Could not open ' . $lockPath . ' — check writable/cache permissions.');
+
+            return;
+        }
+        if (! flock($lock, LOCK_EX | LOCK_NB)) {
+            fclose($lock);
+            CLI::write('tickets:cron is already running — exiting.', 'yellow');
+
+            return;
+        }
+
+        try {
+            $actions = (new AutomationEngine())->run();
+            if (GraphMail::configured()) {
+                $actions = array_merge($actions, GraphMail::poll());
+            }
+            if ($pdq = \App\Libraries\PdqConnect::maybeAutoSync()) {
+                $actions[] = $pdq;
+            }
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
         }
 
         if (! $actions) {

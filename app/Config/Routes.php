@@ -6,7 +6,8 @@ use CodeIgniter\Router\RouteCollection;
 $routes->get('/', 'AuthController::index');
 $routes->get('login', 'AuthController::login');
 $routes->post('login', 'AuthController::attempt');
-$routes->get('logout', 'AuthController::logout');
+$routes->get('logout', 'AuthController::logoutConfirm');
+$routes->post('logout', 'AuthController::logout');
 $routes->get('auth/azure', 'AuthController::azure');
 $routes->get('auth/azure/callback', 'AuthController::azureCallback');
 $routes->get('forgot', 'AuthController::forgot');
@@ -62,6 +63,9 @@ $routes->group('app', ['filter' => 'agentAuth'], static function ($routes) {
     $routes->post('tickets/(:segment)/watchers', 'TicketsController::addWatcher/$1');
     $routes->post('tickets/(:segment)/watchers/(:num)/remove', 'TicketsController::removeWatcher/$1/$2');
     $routes->post('tickets/(:segment)/tags', 'TicketsController::addTag/$1');
+    $routes->post('tickets/(:segment)/tags/remove', 'TicketsController::removeTag/$1');
+    $routes->post('tickets/(:segment)/tasks/(:num)/delete', 'TicketsController::deleteTask/$1/$2');
+    $routes->post('tickets/(:segment)/fields', 'TicketsController::fields/$1');
     $routes->post('tickets/(:segment)/assets', 'TicketsController::linkAsset/$1');
 
     $routes->get('problems', 'ProblemsController::index');
@@ -75,6 +79,8 @@ $routes->group('app', ['filter' => 'agentAuth'], static function ($routes) {
 
     $routes->get('changes', 'ChangesController::index');
     $routes->get('changes/(:num)', 'ChangesController::show/$1');
+    $routes->post('changes/(:num)/link', 'ChangesController::link/$1');
+    $routes->post('changes/(:num)/unlink/(:num)', 'ChangesController::unlink/$1/$2');
     $routes->post('changes', 'ChangesController::create');
     $routes->post('changes/(:num)/approve', 'ChangesController::approve/$1');
     $routes->post('changes/(:num)/reject', 'ChangesController::reject/$1');
@@ -83,6 +89,8 @@ $routes->group('app', ['filter' => 'agentAuth'], static function ($routes) {
     $routes->post('changes/(:num)/delete', 'ChangesController::delete/$1');
 
     $routes->get('assets', 'AssetsController::index');
+    $routes->get('assets/import', 'AssetsController::importForm');
+    $routes->post('assets/import', 'AssetsController::import');
     $routes->post('assets', 'AssetsController::create');
     $routes->get('assets/(:num)', 'AssetsController::show/$1');
     $routes->get('assets/(:num)/modal', 'AssetsController::modal/$1');
@@ -111,11 +119,14 @@ $routes->group('app', ['filter' => 'agentAuth'], static function ($routes) {
     $routes->get('reports/export', 'ReportsController::export');
 
     $routes->post('announcements', 'AnnouncementsController::create');
+    $routes->post('announcements/(:num)', 'AnnouncementsController::update/$1');
     $routes->post('announcements/(:num)/delete', 'AnnouncementsController::delete/$1');
 
     $routes->get('search', 'SearchController::palette');
     $routes->get('users/(:num)/history', 'SearchController::requesterHistory/$1');
     $routes->get('notifications', 'SearchController::notifications');
+    $routes->post('notifications/read', 'SearchController::readAllNotifications');
+    $routes->post('notifications/(:num)/read', 'SearchController::readNotification/$1');
 });
 
 // Admin area — Administrators only.

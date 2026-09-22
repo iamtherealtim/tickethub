@@ -75,13 +75,15 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
           </div>
           <?php if ($canDecide): ?>
           <div class="flex items-center gap-2">
-            <form method="post" action="<?= $base ?>/approve" class="flex items-center gap-2">
+            <form method="post" action="<?= $base ?>/approve" class="flex items-center gap-2"
+                  data-confirm="The ticket opens, its SLA clock starts now, and <?= esc($requester['name'] ?? 'the requester', 'attr') ?> is emailed that the request was approved (the assignee is told in-app). Your note, if any, goes in the email."
+                  data-confirm-label="Approve" data-confirm-title="Approve this request?">
               <?= csrf_field() ?>
               <input name="note" placeholder="Optional note" class="h-8 w-[150px] px-2.5 rounded-lg border border-line bg-white text-[12.5px] placeholder:text-faint">
               <button type="submit" class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-brand hover:bg-brand-600 text-white text-[12.5px] font-semibold"><?= th_icon('check', 'w-3.5 h-3.5') ?>Approve</button>
             </form>
             <form method="post" action="<?= $base ?>/reject"
-                  data-confirm="Reject this request? The ticket is closed and the requester is notified."
+                  data-confirm="The ticket is closed and <?= esc($requester['name'] ?? 'the requester', 'attr') ?> is emailed that the request was not approved. Add a reason in the note field first if you want it included."
                   data-confirm-label="Reject" data-confirm-title="Reject this request?">
               <?= csrf_field() ?>
               <button type="submit" class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-alert-100 bg-white text-alert text-[12.5px] font-medium hover:bg-alert-50"><?= th_icon('x', 'w-3.5 h-3.5') ?>Reject</button>
@@ -178,17 +180,35 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
           . th_prop_row('Group', $propForm('group', (string) $t['group_id'], array_map(static fn ($g) => [$g['id'], $g['name']], $groups)))
           . th_prop_row('Assignee', $propForm('agent', (string) ($t['agent_id'] ?? ''), array_merge([['', 'Unassigned']], array_map(static fn ($a) => [$a['id'], $a['name']], $assignableAgents))))
           . th_prop_row('Category', $propForm('category', $t['category'], TH_CATEGORIES))
-          . th_prop_row('Problem', $propForm('problem', (string) ($t['problem_id'] ?? ''), array_merge([['', 'None']], array_map(static fn ($p) => [$p['id'], $p['code'] . ' — ' . mb_substr($p['title'], 0, 34)], $problems))))) ?>
+          . th_prop_row('Problem', $propForm('problem', (string) ($t['problem_id'] ?? ''), array_merge([['', 'None']], array_map(static fn ($p) => [$p['id'], $p['code'] . ' — ' . mb_substr($p['title'], 0, 34)], $problems))))
+          . (! empty($hasChanges)
+              ? th_prop_row('Change', $propForm('change', (string) ($t['change_id'] ?? ''), array_merge([['', 'None']], array_map(static fn ($c) => [$c['id'], $c['code'] . ' — ' . mb_substr($c['title'], 0, 34)], $changes ?? []))))
+              : '')) ?>
 
       <?php
-        if (! empty($fieldValues)) {
-            $rows = '';
-            foreach ($fieldValues as $fv) {
-                $rows .= '<div class="flex gap-2 px-3.5 py-2 border-b border-line last:border-0 text-[12.5px]">'
-                    . '<span class="text-muted w-[110px] shrink-0">' . esc($fv['label']) . '</span>'
-                    . '<span class="text-ink-500 min-w-0 break-words">' . esc($fv['value']) . '</span></div>';
+        // Custom fields: editable in place. Fields not shown to agents but holding
+        // a value (portal-only ones) are listed read-only underneath.
+        $agentFields = array_values(array_filter($ticketFields ?? [], static fn ($f) => (int) $f['agents'] === 1));
+        $shownIds    = array_map(static fn ($f) => (int) $f['id'], $agentFields);
+        $readOnly    = '';
+        foreach ($ticketFields ?? [] as $f) {
+            if (! in_array((int) $f['id'], $shownIds, true) && isset($fieldValueMap[(int) $f['id']])) {
+                $readOnly .= '<div class="flex gap-2 text-[12.5px]"><span class="text-muted w-[110px] shrink-0">' . esc($f['label']) . '</span>'
+                    . '<span class="text-ink-500 min-w-0 break-words">' . esc($fieldValueMap[(int) $f['id']]) . '</span></div>';
             }
-            echo th_card(th_card_head('Details') . $rows);
+        }
+        if ($agentFields || $readOnly) {
+            $inputs = '';
+            foreach ($agentFields as $f) {
+                $inputs .= th_custom_field($f, $fieldValueMap[(int) $f['id']] ?? null);
+            }
+            echo th_card(th_card_head('Details')
+                . '<div class="p-3.5 space-y-3">'
+                . ($agentFields
+                    ? '<form method="post" action="' . $base . '/fields" class="space-y-3">' . csrf_field() . $inputs
+                        . '<div class="flex justify-end"><button type="submit" class="h-8 px-3 rounded-lg bg-ink hover:bg-ink-700 text-white text-[12.5px] font-semibold">Save details</button></div></form>'
+                    : '')
+                . $readOnly . '</div>');
         }
 
         // SLA panel
@@ -232,11 +252,15 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
         $tasksHtml = '';
         foreach ($tasks as $task) {
             $owner = $task['owner_id'] ? ($users[(int) $task['owner_id']] ?? null) : null;
-            $tasksHtml .= '<form method="post" action="' . $base . '/tasks/' . $task['id'] . '/toggle" class="flex items-start gap-2.5">' . csrf_field()
+            $tasksHtml .= '<div class="flex items-start gap-2.5 group">'
+                . '<form method="post" action="' . $base . '/tasks/' . $task['id'] . '/toggle" class="flex items-start gap-2.5 min-w-0 flex-1">' . csrf_field()
                 . '<input type="checkbox" data-autosubmit ' . ($task['done'] ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line mt-0.5 cursor-pointer">'
                 . '<span class="text-[12.5px] leading-snug ' . ($task['done'] ? 'line-through text-faint' : 'text-ink-500') . '">' . esc($task['title']) . '</span>'
-                . ($owner ? th_avatar($owner, 20, 'ml-auto shrink-0') : '')
-                . '</form>';
+                . '</form>'
+                . ($owner ? th_avatar($owner, 20, 'shrink-0') : '')
+                . '<form method="post" action="' . $base . '/tasks/' . $task['id'] . '/delete" class="shrink-0">' . csrf_field()
+                . '<button type="submit" class="w-6 h-6 grid place-items-center rounded-md text-faint opacity-0 group-hover:opacity-100 hover:text-alert hover:bg-alert-50" title="Remove task">' . th_icon('x', 'w-3 h-3') . '</button></form>'
+                . '</div>';
         }
         if (! $tasksHtml) {
             $tasksHtml = '<p class="text-[12.5px] text-muted">No tasks yet. Break the work down if more than one person is involved.</p>';
@@ -319,7 +343,14 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
         echo th_card(th_card_head('Watchers' . ($watchers ? ' · ' . count($watchers) : ''), th_btn('Add', 'data-modal="addWatcher"', 'ghost', 'plus'))
             . '<div class="p-3.5 space-y-2.5">' . $watchHtml . '</div>');
 
-        $tagsHtml = $tags ? implode('', array_map('th_tag_pill', $tags)) : '<span class="text-[12.5px] text-muted">No tags.</span>';
+        $tagsHtml = '';
+        foreach ($tags as $tag) {
+            // Pill with an inline remove: posts the tag back to the remove endpoint.
+            $tagsHtml .= '<form method="post" action="' . $base . '/tags/remove" class="inline-flex items-center h-[20px] rounded bg-[#EFF1F5] text-[11px] text-muted font-mono pl-1.5">' . csrf_field()
+                . '<input type="hidden" name="tag" value="' . esc($tag, 'attr') . '">' . esc($tag)
+                . '<button type="submit" class="w-5 h-full grid place-items-center rounded-r text-faint hover:text-alert hover:bg-alert-50" title="Remove tag ' . esc($tag, 'attr') . '">' . th_icon('x', 'w-2.5 h-2.5') . '</button></form>';
+        }
+        $tagsHtml = $tagsHtml ?: '<span class="text-[12.5px] text-muted">No tags.</span>';
         echo th_card(th_card_head('Tags', th_btn('Add', 'data-modal="addTag"', 'ghost', 'plus')) . '<div class="p-3.5 flex flex-wrap gap-1.5">' . $tagsHtml . '</div>');
       ?>
     </div>

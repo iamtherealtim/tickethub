@@ -38,7 +38,10 @@ class PortalController extends CatalogController
         $mine = $this->db->table('tickets')->where('requester_id', $this->me['id'])
             ->whereIn('status', TH_OPEN_STATES)->orderBy('updated_at', 'DESC')->get()->getResultArray();
         $popular = $this->db->table('articles')->where('status', 'Published')->orderBy('views', 'DESC')->limit(4)->get()->getResultArray();
-        $announcements = $this->db->table('announcements')->orderBy('created_at', 'DESC')->limit(2)->get()->getResultArray();
+        // Expired notices drop off on their own; a missing expiry means "until removed".
+        $announcements = $this->db->table('announcements')
+            ->groupStart()->where('expires_at', null)->orWhere('expires_at >', date('Y-m-d H:i:s'))->groupEnd()
+            ->orderBy('created_at', 'DESC')->limit(2)->get()->getResultArray();
 
         return view('portal/home', $this->portalShared() + [
             'title' => 'Home', 'pnav' => '',
@@ -62,6 +65,9 @@ class PortalController extends CatalogController
             return redirect()->to('/portal/catalog');
         }
         $t = $this->submitCatalogRequest($item, (int) $this->me['id']);
+        if (! $t) {
+            return redirect()->to('/portal/catalog');
+        }
         $this->toast('Request sent — ' . $t['code']);
 
         return redirect()->to('/portal/tickets/' . $t['code']);
@@ -133,8 +139,9 @@ class PortalController extends CatalogController
         $t = $this->createTicket([
             'subject' => $p['subject'], 'body' => $p['body'],
             'requester_id' => (int) $this->me['id'],
-            'priority' => in_array($p['priority'], ['Urgent', 'High', 'Medium', 'Low'], true) ? $p['priority'] : 'Medium',
-            'category' => in_array($p['category'], TH_CATEGORIES, true) ? $p['category'] : 'Software',
+            // Optional selects: a request without them must not error, just default.
+            'priority' => in_array($p['priority'] ?? '', ['Urgent', 'High', 'Medium', 'Low'], true) ? $p['priority'] : 'Medium',
+            'category' => in_array($p['category'] ?? '', TH_CATEGORIES, true) ? $p['category'] : 'Software',
             'type' => 'Incident', 'source' => 'Portal',
             'attachments' => $this->storeUploads(),
         ]);

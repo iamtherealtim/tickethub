@@ -26,5 +26,11 @@ class PdqTest extends BaseCommand
         if ($last = Settings::get('pdq_last_sync')) {
             CLI::write('Last sync: ' . $last, 'dark_gray');
         }
+        if ($err = Settings::get('pdq_last_error')) {
+            CLI::write('Last error: ' . $err, 'red');
+        }
+        if ($next = Settings::get('pdq_next_page')) {
+            CLI::write('Partial run pending — cron resumes from page ' . $next, 'yellow');
+        }
     }
 }
