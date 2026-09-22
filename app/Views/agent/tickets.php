@@ -72,6 +72,10 @@ $qs = static function (array $overrides) use ($f, $view) {
       <?= th_select('source', $f['source'] ?? '', array_merge([['', 'Any source']], array_map(static fn ($s) => [$s, $s], TH_SOURCES)), 'data-autosubmit') ?>
       <?= th_select('group', $f['group'], array_merge([['', 'Any group']], array_map(static fn ($g) => [$g['id'], $g['name']], $groups)), 'data-autosubmit') ?>
       <?= th_select('agent', $f['agent'], array_merge([['', 'Any assignee'], ['none', 'Unassigned']], array_map(static fn ($a) => [$a['id'], $a['name']], $isAdmin ? $agents : $assignableAgents)), 'data-autosubmit') ?>
+      <?php // Organization: only once the organizations module's migration has run (users.org_id). ?>
+      <?php if (! empty($orgs)): ?>
+      <?= th_select('org', $f['org'] ?? '', array_merge([['', 'Any organization']], array_map(static fn ($o) => [$o['id'], $o['name']], $orgs)), 'data-autosubmit') ?>
+      <?php endif ?>
       <?= th_select('sort', $f['sort'], [['sla', 'Sort: SLA due'], ['updated', 'Sort: last updated'], ['created', 'Sort: newest'], ['priority', 'Sort: priority']], 'data-autosubmit') ?>
     </form>
 
@@ -180,7 +184,7 @@ $qs = static function (array $overrides) use ($f, $view) {
     <?= csrf_field() ?>
     <?php // Carry the current filters through as hidden fields. ?>
     <input type="hidden" name="view" value="<?= esc($view, 'attr') ?>">
-    <?php foreach (['q', 'status', 'priority', 'type', 'category', 'source', 'group', 'agent', 'sort'] as $k): ?>
+    <?php foreach (['q', 'status', 'priority', 'type', 'category', 'source', 'group', 'agent', 'org', 'sort'] as $k): ?>
     <input type="hidden" name="<?= $k ?>" value="<?= esc($filters[$k] ?? '', 'attr') ?>">
     <?php endforeach ?>
     <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Name<span class="text-alert"> *</span></label>

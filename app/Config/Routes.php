@@ -169,6 +169,7 @@ $routes->group('app', ['filter' => 'adminAuth'], static function ($routes) {
     $routes->post('admin/pdq/sync', 'AdminController::syncPdq');
     $routes->post('admin/sso', 'AdminController::saveSso');
     $routes->post('admin/timezone', 'AdminController::saveTimezone');
+    $routes->post('admin/locale', 'AdminController::saveLocale');
     $routes->post('admin/toggle/(:segment)/(:num)', 'AdminController::toggle/$1/$2');
 });
 

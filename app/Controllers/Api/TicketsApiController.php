@@ -2,8 +2,6 @@
 
 namespace App\Controllers\Api;
 
-use App\Controllers\BaseController;
-
 /**
  * JSON API for tickets.
  *
@@ -14,10 +12,8 @@ use App\Controllers\BaseController;
  * Auth is a bearer token bound to a user (see App\Filters\ApiAuth), so every
  * response is already limited to what that person may see.
  */
-class TicketsApiController extends BaseController
+class TicketsApiController extends ApiController
 {
-    private const PER_PAGE_MAX = 100;
-
     public function index()
     {
         $rows = $this->scopeTickets($this->db->table('tickets')->orderBy('id', 'DESC')->get()->getResultArray());
@@ -29,15 +25,27 @@ class TicketsApiController extends BaseController
         if ($this->request->getGet('open') === '1') {
             $rows = array_values(array_filter($rows, 'th_is_open'));
         }
+        foreach (['priority', 'type', 'category'] as $f) {
+            $v = (string) $this->request->getGet($f);
+            if ($v !== '') {
+                $rows = array_values(array_filter($rows, static fn ($t) => $t[$f] === $v));
+            }
+        }
+        if ($gid = (int) $this->request->getGet('group_id')) {
+            $rows = array_values(array_filter($rows, static fn ($t) => (int) $t['group_id'] === $gid));
+        }
+        if ($aid = (int) $this->request->getGet('agent_id')) {
+            $rows = array_values(array_filter($rows, static fn ($t) => (int) $t['agent_id'] === $aid));
+        }
+        if ($rid = (int) $this->request->getGet('requester_id')) {
+            $rows = array_values(array_filter($rows, static fn ($t) => (int) $t['requester_id'] === $rid));
+        }
+        $q = mb_strtolower(trim((string) $this->request->getGet('q')));
+        if ($q !== '') {
+            $rows = array_values(array_filter($rows, static fn ($t) => str_contains(mb_strtolower($t['subject'] . ' ' . $t['code']), $q)));
+        }
 
-        $perPage = min(self::PER_PAGE_MAX, max(1, (int) ($this->request->getGet('per_page') ?: 25)));
-        $page    = max(1, (int) ($this->request->getGet('page') ?: 1));
-        $total   = count($rows);
-
-        return $this->response->setJSON([
-            'data' => array_map([$this, 'shape'], array_slice($rows, ($page - 1) * $perPage, $perPage)),
-            'meta' => ['total' => $total, 'page' => $page, 'per_page' => $perPage],
-        ]);
+        return $this->paginateArray($rows, [$this, 'shape']);
     }
 
     public function show(string $code)
@@ -46,22 +54,23 @@ class TicketsApiController extends BaseController
         if (! $t) {
             return $this->fail('Ticket not found', 404);
         }
-        $messages = $this->db->table('ticket_messages')
-            ->where('ticket_id', $t['id'])->orderBy('created_at')->orderBy('id')->get()->getResultArray();
 
-        $users = $this->users();
+        return $this->ok($this->shape($t) + ['messages' => $this->messageList((int) $t['id'])]);
+    }
 
-        return $this->response->setJSON($this->shape($t) + [
-            'messages' => array_map(static fn ($m) => [
-                'kind'       => $m['kind'],
-                'author'     => $m['user_id'] ? ($users[(int) $m['user_id']]['name'] ?? null) : null,
-                'body'       => $m['body'],
-                'created_at' => $m['created_at'],
-                // Private notes are agent-only; the API mirrors that.
-            ], array_values(array_filter(
-                $messages,
-                fn ($m) => $m['kind'] !== 'note' || $this->isAgent()
-            ))),
+    /** GET api/tickets/{code}/messages — the conversation only. */
+    public function messages(string $code)
+    {
+        $t = $this->ticketScoped($code);
+        if (! $t) {
+            return $this->fail('Ticket not found', 404);
+        }
+        $all = $this->messageList((int) $t['id']);
+        [$page, $perPage] = $this->paging();
+
+        return $this->ok([
+            'data' => array_slice($all, ($page - 1) * $perPage, $perPage),
+            'page' => $page, 'per_page' => $perPage, 'total' => count($all),
         ]);
     }
 
@@ -79,6 +88,9 @@ class TicketsApiController extends BaseController
         if ($requesterId && ! $this->db->table('users')->where('id', $requesterId)->where('active', 1)->countAllResults()) {
             return $this->fail('requester_id does not match an active user', 422);
         }
+        if ($requesterId && ! $this->isAgent() && $requesterId !== (int) $this->me['id']) {
+            return $this->fail('You can only raise tickets as yourself', 403);
+        }
 
         $groupId = isset($in['group_id']) && $in['group_id'] !== '' && $in['group_id'] !== null ? (int) $in['group_id'] : null;
         if ($groupId !== null && ! $this->db->table('groups')->where('id', $groupId)->countAllResults()) {
@@ -86,7 +98,7 @@ class TicketsApiController extends BaseController
         }
 
         $t = $this->createTicket([
-            'subject'      => (string) $in['subject'],
+            'subject'      => mb_substr((string) $in['subject'], 0, 250),
             'body'         => (string) $in['body'],
             // Defaults to the token's own user, which makes the common
             // "raise a ticket as me" call a two-field request.
@@ -104,7 +116,153 @@ class TicketsApiController extends BaseController
         // the insert payload, which has no resolved_at and no routing side effects.
         $fresh = $this->ticketByCode($t['code']) ?? $t;
 
-        return $this->response->setStatusCode(201)->setJSON($this->shape($fresh));
+        return $this->ok($this->shape($fresh), 201);
+    }
+
+    /**
+     * PATCH api/tickets/{code} — status, priority, type, category, subject,
+     * agent_id, group_id, tags. Same authorisation as the ticket page:
+     * canAssignTo() / canUseGroup() decide who may hand work where.
+     */
+    public function update(string $code)
+    {
+        $t = $this->ticketScoped($code);
+        if (! $t) {
+            return $this->fail('Ticket not found', 404);
+        }
+        if (! $this->isAgent()) {
+            return $this->fail('Only agents can change tickets', 403);
+        }
+        $in = $this->json();
+        if ($in === null) {
+            return $this->fail('Invalid JSON body', 400);
+        }
+        $allowedKeys = ['status', 'priority', 'type', 'category', 'subject', 'agent_id', 'group_id', 'tags'];
+        $changes = array_intersect_key($in, array_flip($allowedKeys));
+        if (! $changes) {
+            return $this->fail('Nothing to change — send one of: ' . implode(', ', $allowedKeys), 422);
+        }
+
+        $now   = date('Y-m-d H:i:s');
+        $upd   = ['updated_at' => $now];
+        $notes = [];
+        $after = [];
+
+        foreach ($changes as $field => $value) {
+            switch ($field) {
+                case 'status':
+                    if (! isset(TH_STATUS[$value])) {
+                        return $this->fail('status must be one of ' . implode(', ', array_keys(TH_STATUS)), 422);
+                    }
+                    if ($value !== $t['status']) {
+                        $upd['status'] = $value;
+                        if ($value === 'Resolved') {
+                            $upd['resolved_at'] = $now;
+                        } elseif (in_array($value, TH_OPEN_STATES, true)) {
+                            $upd['resolved_at'] = null;
+                        } elseif ($value === 'Closed' && empty($t['resolved_at'])) {
+                            $upd['resolved_at'] = $now;
+                        }
+                        $notes[] = 'Status changed to ' . $value;
+                        if ($value === 'Resolved') {
+                            $after[] = fn () => $this->notify('Status → Resolved', array_merge($t, $upd));
+                        }
+                    }
+                    break;
+
+                case 'priority':
+                case 'type':
+                case 'category':
+                    $allowed = match ($field) {
+                        'priority' => array_keys(TH_PRIORITY),
+                        'type'     => ['Incident', 'Service request'],
+                        default    => TH_CATEGORIES,
+                    };
+                    if (! in_array($value, $allowed, true)) {
+                        return $this->fail($field . ' must be one of ' . implode(', ', $allowed), 422);
+                    }
+                    if ($value !== $t[$field]) {
+                        $upd[$field] = $value;
+                        $notes[] = ucfirst($field) . ' set to ' . $value;
+                    }
+                    break;
+
+                case 'subject':
+                    $value = trim((string) $value);
+                    if ($value === '') {
+                        return $this->fail('subject cannot be empty', 422);
+                    }
+                    $upd['subject'] = mb_substr($value, 0, 250);
+                    $notes[] = 'Subject edited';
+                    break;
+
+                case 'agent_id':
+                    $agentId = $value === null || $value === '' ? null : (int) $value;
+                    if ($agentId && ! $this->db->table('users')->where('id', $agentId)->where('active', 1)->whereIn('role', ['Administrator', 'Supervisor', 'Agent'])->countAllResults()) {
+                        return $this->fail('agent_id does not match an active agent', 422);
+                    }
+                    if (! $this->canAssignTo($agentId)) {
+                        return $this->fail('You cannot assign this ticket to that person', 403);
+                    }
+                    if ($agentId !== ((int) $t['agent_id'] ?: null)) {
+                        $upd['agent_id'] = $agentId;
+                        $notes[] = $agentId ? 'Assigned to ' . ($this->userById($agentId)['name'] ?? '?') : 'Unassigned';
+                        if ($agentId && $agentId !== (int) $this->me['id']) {
+                            $after[] = function () use ($t, &$upd, $agentId) {
+                                $fresh = array_merge($t, $upd);
+                                $this->notify('Ticket assigned', $fresh);
+                                $this->notifyUsers([$agentId], 'assigned', $t['code'] . ' assigned to you by ' . $this->me['name'], site_url('app/tickets/' . $t['code']), (int) $t['id'], $t['subject']);
+                            };
+                        }
+                    }
+                    break;
+
+                case 'group_id':
+                    $groupId = (int) $value;
+                    if (! $this->canUseGroup($groupId, $t)) {
+                        return $this->fail($this->db->table('groups')->where('id', $groupId)->countAllResults()
+                            ? 'You cannot move this ticket into that group' : 'group_id does not match a group', $this->db->table('groups')->where('id', $groupId)->countAllResults() ? 403 : 422);
+                    }
+                    if ($groupId !== (int) $t['group_id']) {
+                        $upd['group_id'] = $groupId;
+                        $g = $this->db->table('groups')->where('id', $groupId)->get()->getRowArray();
+                        $notes[] = 'Moved to ' . ($g['name'] ?? '?');
+                    }
+                    break;
+
+                case 'tags':
+                    if (is_string($value)) {
+                        $value = preg_split('/[,\s]+/', $value, -1, PREG_SPLIT_NO_EMPTY);
+                    }
+                    if (! is_array($value)) {
+                        return $this->fail('tags must be an array of strings', 422);
+                    }
+                    $tags = [];
+                    foreach ($value as $tag) {
+                        $tag = strtolower(preg_replace('/\s+/', '-', trim((string) $tag)));
+                        if ($tag !== '' && mb_strlen($tag) <= 30 && ! in_array($tag, $tags, true)) {
+                            $tags[] = $tag;
+                        }
+                    }
+                    $upd['tags'] = json_encode(array_slice($tags, 0, 20));
+                    $notes[] = 'Tags set to ' . ($tags ? implode(', ', $tags) : 'none');
+                    break;
+            }
+        }
+
+        if (count($upd) > 1) {
+            $this->db->table('tickets')->where('id', $t['id'])->update(th_status_change($t, $upd));
+            foreach ($notes as $n) {
+                $this->addSystemNote((int) $t['id'], $n);
+            }
+            foreach ($after as $fn) {
+                $fn();
+            }
+            $this->fireUpdated((int) $t['id']);
+            \App\Libraries\Audit::log('api.ticket_updated', $t['code'] . ' — ' . implode('; ', $notes));
+        }
+
+        return $this->ok($this->shape($this->ticketByCode($code) ?? $t));
     }
 
     public function reply(string $code)
@@ -139,19 +297,17 @@ class TicketsApiController extends BaseController
         $this->db->table('tickets')->where('id', $t['id'])->update(th_status_change($t, $upd));
         if ($kind === 'reply') {
             \App\Libraries\TicketIntake::notifyReply(array_merge($t, $upd), (int) $this->me['id'], (string) $this->me['name']);
-        }
-
-        if ($kind === 'reply') {
             $this->notify('Public reply sent', array_merge($t, $upd), ['message' => $body]);
         }
+        $this->fireUpdated((int) $t['id']);
 
-        return $this->response->setStatusCode(201)->setJSON(['ok' => true, 'code' => $t['code'], 'kind' => $kind]);
+        return $this->ok(['ok' => true, 'code' => $t['code'], 'kind' => $kind], 201);
     }
 
     /* ---------- helpers ---------- */
 
     /** One ticket, as the API represents it. */
-    private function shape(array $t): array
+    protected function shape(array $t): array
     {
         $users = $this->users();
         $sla   = th_sla($t);
@@ -165,8 +321,11 @@ class TicketsApiController extends BaseController
             'category'  => $t['category'],
             'source'    => $t['source'],
             'requester' => $users[(int) $t['requester_id']]['name'] ?? null,
+            'requester_id' => (int) $t['requester_id'],
             'assignee'  => $t['agent_id'] ? ($users[(int) $t['agent_id']]['name'] ?? null) : null,
+            'agent_id'  => $t['agent_id'] ? (int) $t['agent_id'] : null,
             'group_id'  => (int) $t['group_id'],
+            'tags'      => json_decode($t['tags'] ?? '[]', true) ?: [],
             'escalated' => (bool) $t['escalated'],
             'sla'       => ['state' => $sla['state'], 'percent_used' => round($sla['pct'], 1), 'due_at' => $t['res_due']],
             'created_at' => $t['created_at'],
@@ -176,37 +335,20 @@ class TicketsApiController extends BaseController
         ];
     }
 
-    /**
-     * Decoded request body, or null when the caller sent JSON that does not parse.
-     * Form-encoded callers are tolerated too; the shape is identical either way.
-     */
-    private function json(): ?array
+    /** Messages for a ticket; private notes are agent-only, as in the UI. */
+    private function messageList(int $ticketId): array
     {
-        try {
-            $body = $this->request->getJSON(true);
-        } catch (\Throwable $e) {
-            return null;
-        }
-        if ($body === null && trim((string) $this->request->getBody()) !== ''
-            && str_contains(strtolower($this->request->getHeaderLine('Content-Type')), 'json')) {
-            return null; // e.g. a bare "null" or a body the framework declined to parse
-        }
+        $users = $this->users();
+        $rows  = $this->db->table('ticket_messages')->where('ticket_id', $ticketId)->orderBy('created_at')->orderBy('id')->get()->getResultArray();
 
-        return is_array($body) ? $body : (array) $this->request->getPost();
-    }
-
-    private function pick(?string $value, array $allowed, string $fallback): string
-    {
-        return $value !== null && in_array($value, $allowed, true) ? $value : $fallback;
-    }
-
-    private function isAgent(): bool
-    {
-        return in_array($this->me['role'] ?? '', ['Administrator', 'Supervisor', 'Agent'], true);
-    }
-
-    private function fail(string $message, int $code)
-    {
-        return $this->response->setStatusCode($code)->setJSON(['error' => $message]);
+        return array_values(array_map(static fn ($m) => [
+            'id'         => (int) $m['id'],
+            'kind'       => $m['kind'],
+            'author'     => $m['user_id'] ? ($users[(int) $m['user_id']]['name'] ?? null) : null,
+            'user_id'    => $m['user_id'] ? (int) $m['user_id'] : null,
+            'body'       => $m['body'],
+            'attachments' => array_map(static fn ($a) => ['name' => $a['n'] ?? '', 'bytes' => (int) ($a['s'] ?? 0), 'url' => isset($a['f']) ? site_url('files/' . $a['f']) : null], json_decode($m['attachments'] ?? '[]', true) ?: []),
+            'created_at' => $m['created_at'],
+        ], array_filter($rows, fn ($m) => $m['kind'] !== 'note' || $this->isAgent())));
     }
 }

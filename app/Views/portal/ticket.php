@@ -95,7 +95,7 @@ $canReply = $open || $reopenWindow;
             <?php if ($m['kind'] === 'description'): ?><span class="text-[10px] font-bold uppercase tracking-wide text-faint">Original request</span><?php endif ?>
             <span class="ml-auto text-[11.5px] text-faint" title="<?= th_date($m['created_at']) ?>"><?= th_rel($m['created_at']) ?></span>
           </div>
-          <div class="text-[13.5px] leading-relaxed text-ink-500 whitespace-pre-line"><?= esc($m['body']) ?></div>
+          <div class="text-[13.5px] leading-relaxed text-ink-500"><?= th_message_html($m) ?></div>
           <?= th_att_chips($m['attachments']) ?>
         </div>
       </div>
@@ -111,8 +111,13 @@ $canReply = $open || $reopenWindow;
     <form method="post" action="<?= site_url('portal/tickets/' . $t['code'] . '/reply') ?>" enctype="multipart/form-data">
       <?= csrf_field() ?>
       <label class="block text-[12.5px] font-medium text-ink-500 mb-2"><?= $reopenWindow ? 'Reopen this request' : 'Add to this request' ?></label>
-      <textarea name="body" rows="4" placeholder="Anything new — an error message, a screenshot, or a nudge if it is now urgent."
-        class="w-full px-3 py-2.5 rounded-lg border border-line text-[13.5px] leading-relaxed placeholder:text-faint focus:border-brand"></textarea>
+      <div class="rounded-lg border border-line px-3 pt-2 pb-1 focus-within:border-brand">
+        <textarea name="body" rows="4" placeholder="Anything new — an error message, a screenshot (paste it straight in), or a nudge if it is now urgent."
+          data-editor data-toolbar="light"
+          data-preview-url="<?= site_url('portal/preview') ?>"
+          data-upload-url="<?= site_url('portal/tickets/' . $t['code'] . '/inline-image') ?>"
+          class="w-full text-[13.5px] leading-relaxed resize-y border-0 focus:ring-0 outline-none placeholder:text-faint bg-transparent"></textarea>
+      </div>
       <div class="flex items-center gap-2 mt-2">
         <label class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-line text-[12.5px] text-muted hover:bg-canvas cursor-pointer">
           <?= th_icon('clip', 'w-3.5 h-3.5') ?>Attach<input type="file" name="files[]" multiple class="hidden" onchange="this.parentNode.querySelector('span').textContent = this.files.length + ' file(s)'"><span></span></label>
@@ -128,4 +133,9 @@ $canReply = $open || $reopenWindow;
   </div>
   <?php endif ?>
 </div>
+<?= th_markdown_css() ?>
+<?= $this->endSection() ?>
+
+<?= $this->section('modals') ?>
+<script src="<?= base_url('assets/js/editor.js') ?>" defer></script>
 <?= $this->endSection() ?>

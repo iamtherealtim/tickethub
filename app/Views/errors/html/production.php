@@ -1,25 +1,22 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="<?= esc(service('request')->getLocale(), 'attr') ?>">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
     <meta name="robots" content="noindex">
-
-    <title><?= lang('Errors.whoops') ?></title>
-
+    <title><?= lang('Errors.whoops') ?> · <?= lang('Errors.appName') ?></title>
+    <script>(function(){try{var t=localStorage.getItem('th-theme');if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
     <style>
-        <?= preg_replace('#[\r\n\t ]+#', ' ', file_get_contents(__DIR__ . DIRECTORY_SEPARATOR . 'debug.css')) ?>
+        <?= view('errors/html/_th_error_css') ?>
     </style>
 </head>
 <body>
-
-    <div class="container text-center">
-
-        <h1 class="headline"><?= lang('Errors.whoops') ?></h1>
-
+    <main class="wrap">
+        <div class="brand"><span class="mark">TH</span><span><?= lang('Errors.appName') ?></span></div>
+        <h1><?= lang('Errors.whoops') ?></h1>
         <p class="lead"><?= lang('Errors.weHitASnag') ?></p>
-
-    </div>
-
+        <p><a class="btn" href="<?= site_url('/') ?>"><?= lang('Errors.backHome') ?></a></p>
+    </main>
 </body>
-
 </html>

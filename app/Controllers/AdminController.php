@@ -29,20 +29,25 @@ class AdminController extends BaseController
             }
         }
 
-        $openTickets = $this->db->table('tickets')->whereIn('status', TH_OPEN_STATES)->get()->getResultArray();
+        // Two GROUP BY counts rather than loading every open ticket into PHP.
         $openByAgent = [];
         $openByGroup = [];
-        foreach ($openTickets as $t) {
-            if ($t['agent_id']) {
-                $openByAgent[(int) $t['agent_id']] = ($openByAgent[(int) $t['agent_id']] ?? 0) + 1;
-            }
-            $openByGroup[(int) $t['group_id']] = ($openByGroup[(int) $t['group_id']] ?? 0) + 1;
+        foreach ($this->db->table('tickets')->select('agent_id, COUNT(*) AS n')->whereIn('status', TH_OPEN_STATES)
+            ->where('agent_id IS NOT NULL', null, false)->groupBy('agent_id')->get()->getResultArray() as $r) {
+            $openByAgent[(int) $r['agent_id']] = (int) $r['n'];
+        }
+        foreach ($this->db->table('tickets')->select('group_id, COUNT(*) AS n')->whereIn('status', TH_OPEN_STATES)
+            ->groupBy('group_id')->get()->getResultArray() as $r) {
+            $openByGroup[(int) $r['group_id']] = (int) $r['n'];
         }
 
         return view('agent/admin', $pluginVars + $this->agentShared() + [
             'title' => 'Admin', 'nav' => 'admin', 'tab' => $tab, 'pluginTab' => $plugin,
             'users' => $this->users(),
             'openByAgent' => $openByAgent, 'openByGroup' => $openByGroup,
+            'orgs' => $this->db->tableExists('organizations')
+                ? $this->db->table('organizations')->orderBy('name')->get()->getResultArray()
+                : [],
             'hours' => $this->db->table('business_hours')->get()->getResultArray(),
             'apiTokens' => $this->db->query(
                 'SELECT t.*, u.name AS who FROM api_tokens t JOIN users u ON u.id = t.user_id ORDER BY t.id DESC'
@@ -225,7 +230,7 @@ class AdminController extends BaseController
             'dept' => ($p['dept'] ?? '') ?: null, 'site' => ($p['site'] ?? '') ?: null, 'phone' => ($p['phone'] ?? '') ?: null,
             'color' => ['brand', 'ink', 'violet', 'signal'][random_int(0, 3)],
             'active' => 1, 'must_change_password' => 1, 'created_at' => $now, 'updated_at' => $now,
-        ]);
+        ] + $this->orgField($p));
         Audit::log('admin.person_added', $p['email']);
         $this->toast($this->inviteMessage($p['name'], $p['email'], $temp));
 
@@ -245,9 +250,120 @@ class AdminController extends BaseController
             'name' => $p['name'], 'title' => ($p['title'] ?? '') ?: null,
             'dept' => ($p['dept'] ?? '') ?: null, 'site' => ($p['site'] ?? '') ?: null, 'phone' => ($p['phone'] ?? '') ?: null,
             'updated_at' => date('Y-m-d H:i:s'),
-        ]);
+        ] + $this->orgField($p));
         Audit::log('admin.person_updated', $u['email']);
         $this->toast($p['name'] . ' updated');
+
+        return redirect()->to('/app/admin/people');
+    }
+
+    /** ['org_id' => id|null] from the posted form, only once the organizations migration exists. */
+    private function orgField(array $p): array
+    {
+        if (! array_key_exists('org_id', $p) || ! $this->db->fieldExists('org_id', 'users')) {
+            return [];
+        }
+        $orgId = (int) $p['org_id'];
+        if ($orgId && ! $this->db->table('organizations')->where('id', $orgId)->countAllResults()) {
+            $orgId = 0;
+        }
+
+        return ['org_id' => $orgId ?: null];
+    }
+
+    /* ---------- data lifecycle: per-person export + anonymize ---------- */
+
+    /** Everything held about one person, as a JSON download (subject access / portability). */
+    public function exportPerson(int $id)
+    {
+        $u = $this->db->table('users')->where('id', $id)->get()->getRowArray();
+        if (! $u) {
+            $this->toast('Person not found', 'warn');
+
+            return redirect()->to('/app/admin/people');
+        }
+        $profile = $u;
+        foreach (['password_hash', 'remember_selector', 'remember_validator', 'remember_expires', 'session_epoch', 'totp_secret', 'totp_enabled', 'must_change_password'] as $k) {
+            unset($profile[$k]);
+        }
+
+        $tickets = [];
+        foreach ($this->db->table('tickets')->where('requester_id', $id)->orderBy('id')->get()->getResultArray() as $t) {
+            $messages = [];
+            foreach ($this->db->table('ticket_messages')->where('ticket_id', $t['id'])->orderBy('id')->get()->getResultArray() as $m) {
+                $messages[] = [
+                    'kind' => $m['kind'], 'user_id' => $m['user_id'] ? (int) $m['user_id'] : null,
+                    'body' => $m['body'], 'created_at' => $m['created_at'],
+                    'attachments' => array_map(static fn ($a) => ['name' => $a['n'] ?? '', 'stored_as' => $a['f'] ?? '', 'bytes' => (int) ($a['s'] ?? 0)], json_decode($m['attachments'] ?? '[]', true) ?: []),
+                ];
+            }
+            $tickets[] = [
+                'code' => $t['code'], 'subject' => $t['subject'], 'status' => $t['status'], 'priority' => $t['priority'],
+                'type' => $t['type'], 'category' => $t['category'], 'source' => $t['source'], 'tags' => json_decode($t['tags'] ?? '[]', true) ?: [],
+                'csat_score' => $t['csat_score'], 'csat_comment' => $t['csat_comment'],
+                'created_at' => $t['created_at'], 'updated_at' => $t['updated_at'], 'resolved_at' => $t['resolved_at'],
+                'messages' => $messages,
+            ];
+        }
+
+        $votes = $this->db->query(
+            'SELECT v.vote, v.created_at, a.id AS article_id, a.title FROM article_votes v LEFT JOIN articles a ON a.id = v.article_id WHERE v.user_id = ? ORDER BY v.id',
+            [$id]
+        )->getResultArray();
+        $time = $this->db->query(
+            'SELECT e.minutes, e.note, e.spent_on, e.created_at, t.code AS ticket FROM ticket_time_entries e LEFT JOIN tickets t ON t.id = e.ticket_id WHERE e.user_id = ? ORDER BY e.id',
+            [$id]
+        )->getResultArray();
+
+        Audit::log('admin.person_exported', $u['email']);
+        $body = json_encode([
+            'exported_at' => date('c'), 'exported_by' => $this->me['email'],
+            'profile' => $profile, 'tickets_requested' => $tickets, 'kb_votes' => $votes, 'time_entries' => $time,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return $this->response
+            ->setHeader('Content-Type', 'application/json; charset=utf-8')
+            ->setHeader('Content-Disposition', 'attachment; filename="user-' . $id . '-export.json"')
+            ->setBody($body);
+    }
+
+    /**
+     * Erase the person while keeping their tickets: name and email become
+     * placeholders, contact details and credentials are cleared, the account
+     * is deactivated. Irreversible by design.
+     */
+    public function anonymizePerson(int $id)
+    {
+        $u = $this->db->table('users')->where('id', $id)->get()->getRowArray();
+        if (! $u) {
+            $this->toast('Person not found', 'warn');
+
+            return redirect()->to('/app/admin/people');
+        }
+        if ((int) $u['id'] === (int) $this->me['id']) {
+            $this->toast('You cannot anonymize your own account', 'warn');
+
+            return redirect()->to('/app/admin/people');
+        }
+        $upd = [
+            'name' => 'Deleted user ' . $id, 'email' => 'deleted-' . $id . '@invalid',
+            'phone' => null, 'title' => null, 'dept' => null, 'site' => null,
+            'password_hash' => password_hash(bin2hex(random_bytes(24)), PASSWORD_DEFAULT),
+            'remember_selector' => null, 'remember_validator' => null, 'remember_expires' => null,
+            'active' => 0, 'updated_at' => date('Y-m-d H:i:s'),
+        ];
+        foreach (['totp_secret' => null, 'totp_enabled' => 0, 'azure_oid' => null, 'org_id' => null] as $col => $val) {
+            if ($this->db->fieldExists($col, 'users')) {
+                $upd[$col] = $val;
+            }
+        }
+        if ($this->db->fieldExists('session_epoch', 'users')) {
+            $upd['session_epoch'] = (int) ($u['session_epoch'] ?? 0) + 1;
+        }
+        $this->db->table('users')->where('id', $id)->update($upd);
+        $this->db->table('api_tokens')->where('user_id', $id)->where('revoked_at', null)->update(['revoked_at' => date('Y-m-d H:i:s')]);
+        Audit::log('admin.person_anonymized', 'user #' . $id . ' (was ' . $u['email'] . ')');
+        $this->toast('Account anonymized — tickets are kept under "Deleted user ' . $id . '"', 'warn');
 
         return redirect()->to('/app/admin/people');
     }
@@ -672,6 +788,20 @@ class AdminController extends BaseController
             ]);
             Audit::log('admin.hours_updated', $p['name']);
             $this->toast('Calendar updated');
+        }
+
+        return redirect()->to('/app/admin/hours');
+    }
+
+    public function saveLocale()
+    {
+        $locale = (string) $this->request->getPost('app_locale');
+        if (! in_array($locale, config('App')->supportedLocales, true)) {
+            $this->toast('That language is not available', 'warn');
+        } else {
+            Settings::set('app_locale', $locale);
+            Audit::log('admin.locale_changed', $locale);
+            $this->toast('Default language set to ' . strtoupper($locale));
         }
 
         return redirect()->to('/app/admin/hours');

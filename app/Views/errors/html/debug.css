@@ -192,3 +192,25 @@ td pre {
 .args {
     display: none;
 }
+
+/* TicketHub: dark-mode pass for the developer exception page (error_exception.php). */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --main-bg-color: #171C26;
+    --main-text-color: #C3C9D6;
+    --dark-text-color: #E6EAF2;
+    --light-text-color: #A0A8B6;
+    --light-bg-color: #232B3C;
+    --dark-bg-color: #0F131A;
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --main-bg-color: #171C26;
+        --main-text-color: #C3C9D6;
+        --dark-text-color: #E6EAF2;
+        --light-text-color: #A0A8B6;
+        --light-bg-color: #232B3C;
+        --dark-bg-color: #0F131A;
+    }
+}

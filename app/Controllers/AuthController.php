@@ -3,8 +3,11 @@
 namespace App\Controllers;
 
 use App\Libraries\Audit;
+use App\Libraries\Ldap;
 use App\Libraries\Mailer;
+use App\Libraries\Oidc;
 use App\Libraries\Settings;
+use App\Libraries\Totp;
 
 class AuthController extends BaseController
 {
@@ -31,6 +34,9 @@ class AuthController extends BaseController
         return view('auth/login', [
             'error'        => $error,
             'azureEnabled' => Settings::get('azure_enabled') === '1' && Settings::get('azure_client_id') !== '',
+            'oidcEnabled'  => Oidc::enabled(),
+            'oidcLabel'    => Oidc::buttonLabel(),
+            'ldapEnabled'  => Ldap::enabled(),
         ]);
     }
 
@@ -278,17 +284,7 @@ class AuthController extends BaseController
             return redirect()->to('/login');
         }
 
-        $this->session->regenerate();
-        $this->session->set([
-            'user_id'       => (int) $user['id'],
-            'role'          => $user['role'],
-            'name'          => $user['name'],
-            'session_epoch' => (int) ($user['session_epoch'] ?? 0),
-        ]);
-        $agent = in_array($user['role'], ['Administrator', 'Supervisor', 'Agent'], true);
-        $this->toast('Welcome back, ' . explode(' ', $user['name'])[0]);
-
-        return redirect()->to($agent ? '/app/dashboard' : '/portal');
+        return $this->beginLogin($user, false, 'azure');
     }
 
     public function attempt()
@@ -312,10 +308,34 @@ class AuthController extends BaseController
 
         $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
 
+        // Directory accounts: when LDAP is on and this is not a local account,
+        // the directory decides. Local users keep their local password.
+        $provider = 'local';
+        if (Ldap::enabled() && (! $user || ($user['auth_provider'] ?? '') === 'ldap')) {
+            try {
+                $entry = Ldap::authenticate($email, $password);
+            } catch (\Throwable $e) {
+                log_message('error', 'LDAP login error: {msg}', ['msg' => $e->getMessage()]);
+                Audit::log('login.failed', $email . ' (directory unreachable)');
+                $this->session->setFlashdata('error', 'The directory could not be reached. Try again shortly or contact an administrator.');
+
+                return redirect()->to('/login');
+            }
+            if ($entry) {
+                $user = $this->provisionDirectoryUser($user, $entry, $email);
+                if ($user === null) {
+                    return redirect()->to('/login');
+                }
+                $provider = 'ldap';
+            } elseif (! $user) {
+                password_verify($password, self::DUMMY_HASH); // same cost as a local miss
+            }
+        }
+
         // Constant-time-ish: unknown emails still pay for one bcrypt verify.
-        $ok = $user
+        $ok = $provider === 'ldap' || ($user
             ? password_verify($password, $user['password_hash'])
-            : (password_verify($password, self::DUMMY_HASH) && false);
+            : (password_verify($password, self::DUMMY_HASH) && false));
 
         if (! $ok) {
             Audit::log('login.failed', $email);
@@ -330,28 +350,325 @@ class AuthController extends BaseController
         }
 
         // Migrate the stored hash if the cost/algorithm default has moved on.
-        if (password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
+        if ($provider === 'local' && password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
             $this->db->table('users')->where('id', $user['id'])->update([
                 'password_hash' => password_hash($password, PASSWORD_DEFAULT),
             ]);
         }
 
+        return $this->beginLogin($user, (bool) $this->request->getPost('remember'), $provider);
+    }
+
+    /* ---------- shared login completion + two-factor ---------- */
+
+    /**
+     * Credentials have been verified. Either finish the login, or — when the
+     * account has TOTP enabled — park it in the session and ask for a code.
+     */
+    private function beginLogin(array $user, bool $remember, string $provider)
+    {
+        if (! empty($user['totp_enabled_at'])) {
+            $this->session->regenerate();
+            $this->session->set([
+                'pending_2fa' => [
+                    'user_id'  => (int) $user['id'],
+                    'remember' => $remember,
+                    'provider' => $provider,
+                    'at'       => time(),
+                ],
+            ]);
+
+            return redirect()->to('/login/2fa');
+        }
+
+        return $this->finishLogin($user, $remember, $provider);
+    }
+
+    /** The one place a session is minted: session_epoch, remember cookie, audit, landing page. */
+    private function finishLogin(array $user, bool $remember, string $provider)
+    {
         $this->session->regenerate();
+        $this->session->remove('pending_2fa');
         $this->session->set([
             'user_id'       => (int) $user['id'],
             'role'          => $user['role'],
             'name'          => $user['name'],
             'session_epoch' => (int) ($user['session_epoch'] ?? 0),
         ]);
-        if ($this->request->getPost('remember')) {
+        if ($remember) {
             $this->issueRememberCookie((int) $user['id']);
         }
-        Audit::log('login.success', $email, (int) $user['id']);
+        if (($user['auth_provider'] ?? null) !== $provider) {
+            try {
+                $this->db->table('users')->where('id', $user['id'])->update(['auth_provider' => $provider]);
+            } catch (\Throwable $e) {
+                // column not migrated yet
+            }
+        }
+        Audit::log('login.success', $user['email'] . ' via ' . $provider, (int) $user['id']);
 
         $agent = in_array($user['role'], ['Administrator', 'Supervisor', 'Agent'], true);
         $this->toast('Welcome back, ' . explode(' ', $user['name'])[0]);
 
-        return redirect()->to($agent ? '/app/dashboard' : '/portal');
+        // withCookies(): a RedirectResponse does not inherit cookies set on the
+        // controller response, so the remember-me cookie would otherwise be lost.
+        return redirect()->to($agent ? '/app/dashboard' : '/portal')->withCookies();
+    }
+
+    /** The user parked by beginLogin(), or null when there is none / it went stale. */
+    private function pendingTwoFactorUser(): ?array
+    {
+        $p = $this->session->get('pending_2fa');
+        if (! is_array($p) || empty($p['user_id']) || (int) ($p['at'] ?? 0) < time() - 10 * MINUTE) {
+            $this->session->remove('pending_2fa');
+
+            return null;
+        }
+        $user = $this->db->table('users')->where('id', (int) $p['user_id'])->get()->getRowArray();
+        if (! $user || ! (int) $user['active'] || empty($user['totp_enabled_at'])) {
+            $this->session->remove('pending_2fa');
+
+            return null;
+        }
+
+        return $user;
+    }
+
+    public function twoFactor()
+    {
+        if ($this->me) {
+            return redirect()->to($this->isAgentRole() ? '/app/dashboard' : '/portal');
+        }
+        if (! $this->pendingTwoFactorUser()) {
+            return redirect()->to('/login');
+        }
+
+        return view('auth/two_factor', ['error' => $this->session->getFlashdata('error')]);
+    }
+
+    public function twoFactorVerify()
+    {
+        $user = $this->pendingTwoFactorUser();
+        if (! $user) {
+            $this->session->setFlashdata('error', 'Your sign-in expired. Start again.');
+
+            return redirect()->to('/login');
+        }
+        $throttler = service('throttler');
+        if ($throttler->check('twofa_' . md5($this->request->getIPAddress() . '|' . $user['id']), 5, MINUTE) === false) {
+            Audit::log('login.2fa_throttled', $user['email'], (int) $user['id']);
+            $this->session->setFlashdata('error', 'Too many attempts. Wait a minute, then try again.');
+
+            return redirect()->to('/login/2fa');
+        }
+
+        $code = trim((string) $this->request->getPost('code'));
+        $ok   = false;
+        if (preg_match('/^\d{6}$/', preg_replace('/\s+/', '', $code) ?? '')) {
+            $ok = Totp::verify(Totp::decryptSecret($user['totp_secret']), $code);
+        } else {
+            $left = Totp::consumeRecovery(json_decode((string) ($user['totp_recovery'] ?? '[]'), true) ?: [], $code);
+            if ($left !== null) {
+                $ok = true;
+                $this->db->table('users')->where('id', $user['id'])->update(['totp_recovery' => json_encode($left)]);
+                Audit::log('login.2fa_recovery_used', $user['email'] . ' (' . count($left) . ' left)', (int) $user['id']);
+                if (count($left) <= 2) {
+                    $this->session->setFlashdata('toast', ['msg' => 'Only ' . count($left) . ' recovery codes left — generate new ones under Security', 'kind' => 'warn']);
+                }
+            }
+        }
+        if (! $ok) {
+            Audit::log('login.2fa_failed', $user['email'], (int) $user['id']);
+            $this->session->setFlashdata('error', 'That code is not right. Codes change every 30 seconds — try the current one.');
+
+            return redirect()->to('/login/2fa');
+        }
+        $p = (array) $this->session->get('pending_2fa');
+
+        return $this->finishLogin($user, ! empty($p['remember']), (string) ($p['provider'] ?? 'local'));
+    }
+
+    /* ---------- LDAP / Active Directory ---------- */
+
+    /**
+     * Create or refresh the local account for a directory user who has just
+     * authenticated. Returns the (fresh) user row, or null with a flash error
+     * set when the account cannot be used.
+     */
+    private function provisionDirectoryUser(?array $user, array $entry, string $login): ?array
+    {
+        $email = $entry['email'] !== '' ? $entry['email'] : strtolower($login);
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $this->session->setFlashdata('error', 'Directory sign-in failed: your directory account has no email address we can use.');
+
+            return null;
+        }
+        if (! $user) {
+            // The login may have been a sAMAccountName; match the mail attribute too.
+            $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+        }
+        $mappedRole = Ldap::roleFromGroups($entry['groups']);
+        $now        = date('Y-m-d H:i:s');
+        $profile    = array_filter([
+            'name'  => mb_substr($entry['name'], 0, 100),
+            'title' => mb_substr($entry['title'], 0, 100),
+            'phone' => mb_substr($entry['phone'], 0, 40),
+            'dept'  => mb_substr($entry['dept'], 0, 60),
+        ], static fn ($v) => $v !== '');
+
+        if (! $user) {
+            if (Settings::get('ldap_create_users', '1') !== '1') {
+                $this->session->setFlashdata('error', 'Directory sign-in failed: no matching TicketHub account. Ask an administrator to invite you.');
+
+                return null;
+            }
+            $role = $mappedRole ?? 'Requester';
+            $this->db->table('users')->insert($profile + [
+                'name' => $email, 'email' => $email,
+                'password_hash' => password_hash(bin2hex(random_bytes(24)), PASSWORD_DEFAULT),
+                'role' => $role, 'title' => $role === 'Requester' ? 'Employee' : 'Support Analyst',
+                'group_id' => $role === 'Requester' ? null : ((int) Settings::get('default_group_id', '1') ?: null),
+                'color' => ['brand', 'ink', 'violet', 'signal'][random_int(0, 3)],
+                'active' => 1, 'auth_provider' => 'ldap',
+                'created_at' => $now, 'updated_at' => $now,
+            ]);
+            $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+            Audit::log('ldap.provisioned', $email . ' as ' . $role, (int) $user['id']);
+
+            return $user;
+        }
+
+        $update = $profile + ['auth_provider' => 'ldap', 'updated_at' => $now];
+        $this->applyMappedRole($user, $mappedRole, $update, 'ldap');
+        $this->db->table('users')->where('id', $user['id'])->update($update);
+
+        return $this->db->table('users')->where('id', $user['id'])->get()->getRowArray();
+    }
+
+    /**
+     * Fold a directory-mapped role into $update, with the same safety rules as
+     * the Entra mapping: Supervisors keep their manual promotion when the
+     * directory says Agent, and the last active Administrator is never demoted.
+     */
+    private function applyMappedRole(array $user, ?string $mappedRole, array &$update, string $source): void
+    {
+        if ($mappedRole === null || $mappedRole === $user['role']) {
+            return;
+        }
+        $lastAdmin = $user['role'] === 'Administrator'
+            && $this->db->table('users')->where('role', 'Administrator')->where('active', 1)->countAllResults() <= 1;
+        if ($user['role'] === 'Supervisor' && $mappedRole === 'Agent') {
+            return;
+        }
+        if ($lastAdmin) {
+            log_message('warning', '{src}: refusing to demote the last active Administrator ({email}) via group mapping.', ['src' => $source, 'email' => $user['email']]);
+
+            return;
+        }
+        $update['role'] = $mappedRole;
+        if ($mappedRole !== 'Requester' && empty($user['group_id'])) {
+            $update['group_id'] = (int) Settings::get('default_group_id', '1') ?: null;
+        }
+        Audit::log($source . '.role_mapped', $user['email'] . ' ' . $user['role'] . ' → ' . $mappedRole, (int) $user['id']);
+    }
+
+    /* ---------- generic OpenID Connect (Google, Okta, Keycloak, …) ---------- */
+
+    public function oidc()
+    {
+        if (! Oidc::enabled()) {
+            $this->session->setFlashdata('error', 'Single sign-on is not enabled or not fully configured.');
+
+            return redirect()->to('/login');
+        }
+
+        try {
+            return redirect()->to(Oidc::authorizationUrl(site_url('auth/oidc/callback')));
+        } catch (\Throwable $e) {
+            log_message('error', 'OIDC start failed: {msg}', ['msg' => $e->getMessage()]);
+            $this->session->setFlashdata('error', 'Single sign-on failed: ' . $e->getMessage());
+
+            return redirect()->to('/login');
+        }
+    }
+
+    public function oidcCallback()
+    {
+        $label = Oidc::buttonLabel();
+        if ($err = $this->request->getGet('error')) {
+            $desc = (string) ($this->request->getGet('error_description') ?? '');
+            $this->session->setFlashdata('error', $label . ' failed: ' . $err . ($desc ? ' — ' . strtok($desc, "\n") : ''));
+
+            return redirect()->to('/login');
+        }
+        if (! Oidc::enabled()) {
+            return redirect()->to('/login');
+        }
+
+        try {
+            $claims = Oidc::handleCallback(
+                (string) $this->request->getGet('code'),
+                (string) $this->request->getGet('state'),
+                site_url('auth/oidc/callback')
+            );
+        } catch (\RuntimeException $e) {
+            log_message('error', 'OIDC callback rejected: {msg}', ['msg' => $e->getMessage()]);
+            $this->session->setFlashdata('error', $label . ' failed: ' . $e->getMessage());
+
+            return redirect()->to('/login');
+        } catch (\Throwable $e) {
+            log_message('error', 'OIDC exception: {msg}', ['msg' => $e->getMessage()]);
+            $this->session->setFlashdata('error', $label . ' failed: could not reach the identity provider.');
+
+            return redirect()->to('/login');
+        }
+
+        $email = strtolower(trim((string) ($claims['email'] ?? '')));
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $this->session->setFlashdata('error', $label . ' failed: the provider returned no email address (add the "email" scope).');
+
+            return redirect()->to('/login');
+        }
+        if (array_key_exists('email_verified', $claims) && ! filter_var($claims['email_verified'], FILTER_VALIDATE_BOOLEAN)) {
+            $this->session->setFlashdata('error', $label . ' failed: your email address is not verified with the provider.');
+
+            return redirect()->to('/login');
+        }
+        $name = trim((string) ($claims['name'] ?? trim(($claims['given_name'] ?? '') . ' ' . ($claims['family_name'] ?? '')))) ?: $email;
+        $mappedRole = Oidc::roleFromClaims($claims);
+
+        $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+        if (! $user) {
+            $now  = date('Y-m-d H:i:s');
+            $role = $mappedRole ?? 'Requester';
+            $this->db->table('users')->insert([
+                'name' => mb_substr($name, 0, 100), 'email' => $email,
+                'password_hash' => password_hash(bin2hex(random_bytes(24)), PASSWORD_DEFAULT),
+                'role' => $role, 'title' => $role === 'Requester' ? 'Employee' : 'Support Analyst',
+                'group_id' => $role === 'Requester' ? null : ((int) Settings::get('default_group_id', '1') ?: null),
+                'color' => ['brand', 'ink', 'violet', 'signal'][random_int(0, 3)],
+                'active' => 1, 'auth_provider' => 'oidc',
+                'created_at' => $now, 'updated_at' => $now,
+            ]);
+            $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+            Audit::log('oidc.provisioned', $email . ' as ' . $role, (int) $user['id']);
+        } else {
+            $update = [];
+            $this->applyMappedRole($user, $mappedRole, $update, 'oidc');
+            if ($update) {
+                $update['updated_at'] = date('Y-m-d H:i:s');
+                $this->db->table('users')->where('id', $user['id'])->update($update);
+                $user = array_merge($user, $update);
+            }
+        }
+
+        if (! (int) $user['active']) {
+            $this->session->setFlashdata('error', 'This account has been deactivated. Contact an administrator.');
+
+            return redirect()->to('/login');
+        }
+
+        return $this->beginLogin($user, false, 'oidc');
     }
 
     /**
@@ -373,7 +690,7 @@ class AuthController extends BaseController
         $this->clearRememberCookie();
         $this->session->destroy();
 
-        return redirect()->to('/login');
+        return redirect()->to('/login')->withCookies();
     }
 
     /* ---------- forgot / reset password ---------- */

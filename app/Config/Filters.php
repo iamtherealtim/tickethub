@@ -31,6 +31,8 @@ class Filters extends BaseFilters
         'apiAuth'       => \App\Filters\ApiAuth::class,
         'mustChangePw'  => \App\Filters\MustChangePassword::class,
         'sessionEpoch'  => \App\Filters\SessionEpoch::class,
+        'locale'        => \App\Filters\Locale::class,
+        'mfaRequired'   => \App\Filters\MfaRequired::class,
         'csrf'          => CSRF::class,
         'toolbar'       => DebugToolbar::class,
         'honeypot'      => Honeypot::class,
@@ -79,11 +81,14 @@ class Filters extends BaseFilters
     public array $globals = [
         'before' => [
             // 'honeypot',
+            'locale' => ['except' => ['api/*']],
             'csrf' => ['except' => ['api/*']],
             // A password change/reset bumps users.session_epoch; sessions minted
             // before that are signed out on their next request.
             'sessionEpoch' => ['except' => ['api/*']],
             'mustChangePw' => ['except' => ['login', 'logout', 'forgot', 'reset/*', 'auth/*', 'api/*', 'assets/*']],
+            // Admin policy mfa_required_roles: users in scope must enrol an authenticator first.
+            'mfaRequired' => ['except' => ['login', 'login/*', 'logout', 'forgot', 'reset/*', 'auth/*', 'api/*', 'assets/*', 'files/*', 'account/security', 'account/security/*']],
             // 'invalidchars',
         ],
         'after' => [

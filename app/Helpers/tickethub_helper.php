@@ -22,7 +22,7 @@ const TH_STATUS = [
 
 const TH_OPEN_STATES = ['New', 'Open', 'Pending'];
 
-const TH_SLA_COLOR = ['ok' => '#0E7C6B', 'warn' => '#B8760B', 'breached' => '#BC332D', 'met' => '#0E7C6B', 'missed' => '#BC332D'];
+const TH_SLA_COLOR = ['ok' => 'rgb(var(--th-brand))', 'warn' => 'rgb(var(--th-signal))', 'breached' => 'rgb(var(--th-alert))', 'met' => 'rgb(var(--th-brand))', 'missed' => 'rgb(var(--th-alert))'];
 
 const TH_AVATAR_TONE = [
     'brand'  => 'bg-brand-50 text-brand border-brand-100',
@@ -607,7 +607,8 @@ function th_day(string|int|null $dt): string
 /** Attachment chips with authenticated download links. */
 function th_att_chips(string|array|null $atts): string
 {
-    $list = is_string($atts) ? (json_decode($atts, true) ?: []) : ($atts ?? []);
+    // Inline images (pasted into a Markdown reply) render in the body itself.
+    $list = th_att_visible($atts);
     if (! $list) {
         return '';
     }
@@ -1067,4 +1068,196 @@ function th_asset_pdq(array $a): array
         ['Device ID', '<span class="font-mono text-[12px]">' . esc($a['pdq_device_id']) . '</span>'],
         ['Last synced', $a['pdq_synced_at'] ? th_rel($a['pdq_synced_at']) : '—'],
     ];
+}
+
+/* ---------- Markdown replies ---------- */
+
+/**
+ * Render a reply written in Markdown to safe HTML.
+ *
+ * Deliberately small: headings (## / ###), bold, italic, inline code, fenced
+ * code blocks, links (http/https/mailto only), bullet and numbered lists,
+ * blockquotes, paragraphs with hard line breaks, and images only when they
+ * point at this site's own /files/ store. Every character is HTML-escaped
+ * before any markup is produced, and the result still goes through
+ * th_sanitize_html() so nothing the renderer missed can reach the page.
+ */
+function th_markdown(string $md): string
+{
+    $md = str_replace(["\r\n", "\r"], "\n", $md);
+    if (trim($md) === '') {
+        return '';
+    }
+
+    $stash = [];
+    $keep  = static function (string $html) use (&$stash): string {
+        $stash[] = $html;
+
+        return "\x1A" . (count($stash) - 1) . "\x1A";
+    };
+    $enc = static fn (string $s): string => htmlspecialchars($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+    // Fenced code first: nothing inside is Markdown.
+    $md = preg_replace_callback('/^```[^\n]*\n(.*?)\n?```[ \t]*$/ms', static fn ($m) => $keep('<pre><code>' . $enc($m[1]) . '</code></pre>'), $md);
+
+    $urlOk = static function (string $url, bool $image): bool {
+        $u = html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $u = preg_replace('/[\x00-\x20\x7F]/', '', $u) ?? '';
+        if ($image) {
+            $base = rtrim(base_url(), '/');
+            if (str_starts_with($u, $base . '/files/')) {
+                $u = substr($u, strlen($base));
+            }
+
+            return (bool) preg_match('#^/files/[a-f0-9]{32}\.[a-z0-9]{2,5}(\?[\w=&%.\-]*)?$#', $u);
+        }
+
+        return (bool) preg_match('#^(https?://|mailto:)[^\s]+$#i', $u);
+    };
+
+    $inline = static function (string $text) use ($keep, $enc, $urlOk): string {
+        $text = $enc($text);
+        // Inline code is opaque to every other rule.
+        $text = preg_replace_callback('/`([^`\n]+)`/', static fn ($m) => $keep('<code>' . $m[1] . '</code>'), $text);
+        // Images, then links (an image is a link with a "!" in front).
+        $text = preg_replace_callback('/!\[([^\]]*)\]\(([^)\s]+)\)/', static function ($m) use ($keep, $urlOk) {
+            // Off-site images stay literal text (stashed so the link rule leaves them alone).
+            return $keep($urlOk($m[2], true) ? '<img src="' . $m[2] . '" alt="' . $m[1] . '">' : $m[0]);
+        }, $text);
+        $text = preg_replace_callback('/\[([^\]]+)\]\(([^)\s]+)\)/', static function ($m) use ($keep, $urlOk) {
+            return $urlOk($m[2], false) ? $keep('<a href="' . $m[2] . '" rel="noopener">' . $m[1] . '</a>') : $m[0];
+        }, $text);
+        // Bare URLs become links too; replies are full of them.
+        $text = preg_replace_callback('#(?<![\w"\'=/])(https?://[^\s<]+[^\s<.,;:!?)\]])#i', static fn ($m) => $keep('<a href="' . $m[1] . '" rel="noopener">' . $m[1] . '</a>'), $text);
+        $text = preg_replace('/\*\*(?=\S)(.+?)(?<=\S)\*\*/s', '<strong>$1</strong>', $text);
+        $text = preg_replace('/(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])/', '<em>$1</em>', $text);
+        $text = preg_replace('/(?<![\w_])_(?=\S)([^_\n]+?)(?<=\S)_(?![\w_])/', '<em>$1</em>', $text);
+
+        return $text;
+    };
+
+    $lines = explode("\n", $md);
+    $out   = '';
+    $para  = [];
+    $flush = static function () use (&$para, &$out, $inline): void {
+        if ($para) {
+            $out .= '<p>' . implode('<br>', array_map($inline, $para)) . '</p>';
+            $para = [];
+        }
+    };
+
+    $n = count($lines);
+    for ($i = 0; $i < $n; $i++) {
+        $line = $lines[$i];
+        $trim = trim($line);
+
+        if ($trim === '') {
+            $flush();
+
+            continue;
+        }
+        if (preg_match('/^\x1A\d+\x1A$/', $trim)) { // stashed fenced block
+            $flush();
+            $out .= $trim;
+
+            continue;
+        }
+        if (preg_match('/^(#{2,3})\s+(.+?)\s*#*$/', $trim, $m)) {
+            $flush();
+            $tag = strlen($m[1]) === 2 ? 'h2' : 'h3';
+            $out .= '<' . $tag . '>' . $inline($m[2]) . '</' . $tag . '>';
+
+            continue;
+        }
+        if (preg_match('/^>\s?(.*)$/', $trim)) {
+            $flush();
+            $quote = [];
+            while ($i < $n && preg_match('/^\s*>\s?(.*)$/', $lines[$i], $q)) {
+                $quote[] = $q[1];
+                $i++;
+            }
+            $i--;
+            $out .= '<blockquote>' . th_markdown(implode("\n", $quote)) . '</blockquote>';
+
+            continue;
+        }
+        if (preg_match('/^([-*+]|\d+[.)])\s+/', $trim, $m)) {
+            $flush();
+            $ordered = ctype_digit($m[1][0]);
+            $re      = $ordered ? '/^\s*\d+[.)]\s+(.*)$/' : '/^\s*[-*+]\s+(.*)$/';
+            $items   = [];
+            while ($i < $n && preg_match($re, $lines[$i], $li)) {
+                $items[] = $li[1];
+                // Indented continuation lines belong to the item above.
+                while ($i + 1 < $n && preg_match('/^\s{2,}(?![-*+]\s|\d+[.)]\s)(\S.*)$/', $lines[$i + 1], $c)) {
+                    $items[count($items) - 1] .= "\n" . $c[1];
+                    $i++;
+                }
+                $i++;
+            }
+            $i--;
+            $tag = $ordered ? 'ol' : 'ul';
+            $out .= '<' . $tag . '>';
+            foreach ($items as $it) {
+                $out .= '<li>' . implode('<br>', array_map($inline, explode("\n", $it))) . '</li>';
+            }
+            $out .= '</' . $tag . '>';
+
+            continue;
+        }
+        if (preg_match('/^(-{3,}|\*{3,})$/', $trim)) {
+            $flush();
+            $out .= '<hr>';
+
+            continue;
+        }
+        $para[] = $line;
+    }
+    $flush();
+
+    // Restore stashed fragments (code, links, images).
+    for ($pass = 0; $pass < 3 && str_contains($out, "\x1A"); $pass++) {
+        $out = preg_replace_callback('/\x1A(\d+)\x1A/', static fn ($m) => $stash[(int) $m[1]] ?? '', $out);
+    }
+
+    return th_sanitize_html($out);
+}
+
+/**
+ * Render a stored ticket message body according to its format column:
+ * legacy 'text' rows are escaped with line breaks kept, 'markdown' rows go
+ * through th_markdown(). Both come back wrapped for the .prose-md styles.
+ */
+function th_message_html(array $m): string
+{
+    if (($m['format'] ?? 'text') === 'markdown') {
+        return '<div class="prose-md">' . th_markdown((string) $m['body']) . '</div>';
+    }
+
+    return '<div class="whitespace-pre-line">' . esc((string) $m['body']) . '</div>';
+}
+
+/** Minimal styling for rendered Markdown, shared by the agent and portal ticket pages. */
+function th_markdown_css(): string
+{
+    return '<style>
+.prose-md p{margin:0 0 .6em}.prose-md p:last-child{margin-bottom:0}
+.prose-md h2{font-size:1.05em;font-weight:600;margin:.8em 0 .3em}.prose-md h3{font-size:1em;font-weight:600;margin:.7em 0 .25em}
+.prose-md ul{list-style:disc;margin:.3em 0 .6em 1.25em}.prose-md ol{list-style:decimal;margin:.3em 0 .6em 1.25em}.prose-md li{margin:.15em 0}
+.prose-md blockquote{border-left:3px solid #E3E6EC;padding-left:.75em;color:#5B6577;margin:.4em 0 .6em}
+.prose-md code{font-family:"IBM Plex Mono",monospace;font-size:.86em;background:#EEF0F4;padding:1px 5px;border-radius:4px}
+.prose-md pre{background:#10141C;color:#E3E6EC;border-radius:8px;padding:.7em .9em;overflow:auto;margin:.4em 0 .7em;font-size:.86em;line-height:1.55}
+.prose-md pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.prose-md a{color:#0E7C6B;text-decoration:underline}
+.prose-md img{max-width:100%;height:auto;border:1px solid #E3E6EC;border-radius:8px;margin:.3em 0;display:block}
+.prose-md hr{border:0;border-top:1px solid #E3E6EC;margin:.8em 0}
+</style>';
+}
+
+/** Strip inline-image descriptors: they render inside the body, not as chips. */
+function th_att_visible(string|array|null $atts): array
+{
+    $list = is_string($atts) ? (json_decode($atts, true) ?: []) : ($atts ?? []);
+
+    return array_values(array_filter($list, static fn ($a) => empty($a['inline'])));
 }

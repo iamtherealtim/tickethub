@@ -46,6 +46,7 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
           <?php endif ?>
           <form method="post" action="<?= $base ?>/escalate"><?= csrf_field() ?><?= th_btn('Escalate', 'type="submit"', 'ghost', 'warn') ?></form>
           <?= th_btn('Merge', 'data-fetch-modal="' . site_url('app/tickets/' . $t['code'] . '/merge-search') . '"', 'ghost', 'link') ?>
+          <?php if (! empty($canTemplate)): ?><?= th_btn('Save as template', 'data-modal="saveTemplate"', 'ghost', 'layers') ?><?php endif ?>
           <form method="post" action="<?= $base ?>/delete" data-confirm="<?= esc($t['code'] . ' and its ' . count($messages) . ' messages will be removed. Requesters are not notified.', 'attr') ?>" data-confirm-title="Delete this ticket?" data-confirm-label="Delete">
             <?= csrf_field() ?><?= th_btn('Delete', 'type="submit"', 'danger', 'trash') ?>
           </form>
@@ -126,7 +127,7 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
                 <?php elseif ($m['kind'] === 'description'): ?><span class="text-[10px] font-bold uppercase tracking-wide text-faint">Original request</span><?php endif ?>
                 <span class="ml-auto text-[11.5px] text-faint" title="<?= th_date($m['created_at']) ?>"><?= th_rel($m['created_at']) ?></span>
               </div>
-              <div class="text-[13.5px] leading-relaxed text-ink-500 whitespace-pre-line"><?= esc($m['body']) ?></div>
+              <div class="text-[13.5px] leading-relaxed text-ink-500"><?= th_message_html($m) ?></div>
               <?= th_att_chips($m['attachments']) ?>
             </div>
           </div>
@@ -144,19 +145,28 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
             <button type="button" data-composer-tab="reply" class="h-8 px-3 rounded-lg border text-[12.5px] font-medium transition bg-ink text-white border-ink">Reply to requester</button>
             <button type="button" data-composer-tab="note" class="h-8 px-3 rounded-lg border text-[12.5px] font-medium transition bg-white text-ink-500 border-line hover:bg-canvas">Private note</button>
             <div class="ml-auto flex items-center gap-2">
-              <select data-canned class="h-8 rounded-lg border border-line bg-white text-[12px] text-muted pl-2.5">
-                <option value="">Canned response…</option>
-                <?php foreach ($cannedList as $c): ?>
-                <option value="<?= $c['id'] ?>" data-body="<?= esc($c['body'], 'attr') ?>"><?= esc($c['title']) ?></option>
-                <?php endforeach ?>
-              </select>
+              <?= $this->include('agent/_canned_picker') ?>
             </div>
           </div>
           <div class="p-3">
+            <?php
+              // Placeholders the picker fills in client-side when a response is inserted.
+              $editorVars = [
+                  'requester_first_name' => explode(' ', $requester['name'] ?? 'there')[0],
+                  'requester_name' => $requester['name'] ?? 'there',
+                  'agent_name' => $me['name'], 'ticket_code' => $t['code'], 'ticket_subject' => $t['subject'],
+              ];
+            ?>
             <textarea id="composer" name="body" rows="5"
-              data-ph-reply="Write to <?= esc(explode(' ', $requester['name'] ?? 'the requester')[0], 'attr') ?>…"
+              data-editor data-toolbar="full"
+              data-preview-url="<?= site_url('app/tickets/preview') ?>"
+              data-upload-url="<?= $base ?>/inline-image"
+              data-canned-url="<?= site_url('app/canned.json') ?>"
+              data-canned-delete-url="<?= site_url('app/canned/%d/delete') ?>"
+              data-vars="<?= esc(json_encode($editorVars), 'attr') ?>"
+              data-ph-reply="Write to <?= esc(explode(' ', $requester['name'] ?? 'the requester')[0], 'attr') ?>… (Markdown, type /shortcut + Tab for a canned response)"
               data-ph-note="Visible to agents only — record what you found, tried, or ruled out."
-              placeholder="Write to <?= esc(explode(' ', $requester['name'] ?? 'the requester')[0], 'attr') ?>…"
+              placeholder="Write to <?= esc(explode(' ', $requester['name'] ?? 'the requester')[0], 'attr') ?>… (Markdown, type /shortcut + Tab for a canned response)"
               class="w-full text-[13.5px] leading-relaxed resize-y border-0 focus:ring-0 outline-none placeholder:text-faint bg-transparent"></textarea>
             <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-line">
               <label class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line text-[12.5px] text-muted hover:bg-canvas cursor-pointer">
@@ -439,4 +449,17 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
   </form>
 </template>
 
+<?php if (! empty($canTemplate)): ?>
+<template id="tpl-saveTemplate">
+  <form method="post" action="<?= $base ?>/save-template" data-modal-title="Save as a ticket template" data-modal-sub="Subject, description, type, priority, category, group, assignee and the task list are copied. Agents can then start a new ticket from it." data-submit="Save template">
+    <?= csrf_field() ?>
+    <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Template name<span class="text-alert"> *</span></label>
+      <input name="name" required maxlength="100" value="<?= esc($t['subject'], 'attr') ?>" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
+    <p class="text-[11.5px] text-faint mt-2"><?= count($tasks) ?> task(s) will be included. Manage templates and recurring schedules under Admin → Ticket templates.</p>
+  </form>
+</template>
+<?php endif ?>
+
+<?= th_markdown_css() ?>
+<script src="<?= base_url('assets/js/editor.js') ?>" defer></script>
 <?= $this->endSection() ?>
