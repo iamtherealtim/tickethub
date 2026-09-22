@@ -1,0 +1,15 @@
+.env
+/vendor/
+/writable/cache/*
+/writable/debugbar/*
+/writable/logs/*
+/writable/session/*
+/writable/uploads/*
+!/writable/*/index.html
+!/writable/uploads/index.html
+/.claude/settings.local.json
+/node_modules/
+.phpunit.result.cache
+/build/
+Thumbs.db
+.DS_Store
