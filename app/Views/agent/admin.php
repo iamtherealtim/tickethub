@@ -37,6 +37,19 @@ $hoursById = [];
 foreach ($hours as $h) {
     $hoursById[(int) $h['id']] = $h;
 }
+$orgsById = [];
+foreach ($orgs ?? [] as $o) {
+    $orgsById[(int) $o['id']] = $o;
+}
+// Organization <select> for the people forms; empty until the migration has run.
+$orgSelect = static function (?int $current) use ($orgs) {
+    $html = '<select name="org_id" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px]"><option value="">— None —</option>';
+    foreach ($orgs ?? [] as $o) {
+        $html .= '<option value="' . (int) $o['id'] . '"' . ((int) $o['id'] === (int) $current ? ' selected' : '') . '>' . esc($o['name']) . '</option>';
+    }
+
+    return $html . '</select>';
+};
 ?>
 <div class="p-5 max-w-[1400px] mx-auto fade-in">
   <div class="mb-5">
@@ -95,12 +108,13 @@ foreach ($hours as $h) {
       <?php elseif ($tab === 'people'): ?>
       <?= th_card(
           th_card_head('People (requesters)', th_btn('Add person', 'data-modal="addPerson"', 'brand', 'plus'))
-          . th_table_head([['Person', 'flex-1'], ['Department', 'w-[120px]'], ['Site', 'w-[110px]'], ['Phone', 'w-[140px]'], ['Active', 'w-[130px] text-right']])
-          . implode('', array_map(static function ($u) {
+          . th_table_head([['Person', 'flex-1'], ['Organization', 'w-[140px]'], ['Department', 'w-[120px]'], ['Site', 'w-[110px]'], ['Phone', 'w-[140px]'], ['Active', 'w-[130px] text-right']])
+          . implode('', array_map(static function ($u) use ($orgsById) {
               return '<div class="flex flex-wrap md:flex-nowrap items-center gap-3 px-4 py-2.5 border-b border-line last:border-0">'
                   . '<span class="flex items-center gap-2.5 flex-1 min-w-0">' . th_avatar($u, 30)
                   . '<span class="min-w-0"><span class="block text-[13px] font-medium text-ink truncate">' . esc($u['name']) . '</span>'
                   . '<span class="block text-[11.5px] text-faint truncate">' . esc($u['email']) . '</span></span></span>'
+                  . '<span class="w-[140px] text-[12.5px] text-muted truncate">' . esc($orgsById[(int) ($u['org_id'] ?? 0)]['name'] ?? '—') . '</span>'
                   . '<span class="w-[120px] text-[12.5px] text-muted truncate">' . esc($u['dept'] ?? '—') . '</span>'
                   . '<span class="w-[110px] text-[12.5px] text-muted truncate">' . esc($u['site'] ?? '—') . '</span>'
                   . '<span class="w-[140px] font-mono text-[11.5px] text-muted truncate">' . esc($u['phone'] ?? '—') . '</span>'
@@ -224,6 +238,16 @@ foreach ($hours as $h) {
             . '<div class="text-[12px] text-muted">Dates and times across the workspace and portal. Storage stays UTC.</div></div>'
             . th_select('app_timezone', $settings['app_timezone'] ?? 'UTC', array_map(static fn ($z) => [$z, $z],
                 ['UTC', 'America/Toronto', 'America/Vancouver', 'America/Winnipeg', 'America/Halifax', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Amsterdam', 'Europe/Paris', 'Asia/Tokyo', 'Australia/Sydney']))
+            . '<button type="submit" class="h-8 px-3 rounded-lg bg-brand hover:bg-brand-600 text-white text-[12.5px] font-semibold">Save</button>'
+            . '</div>') ?>
+      </form>
+      <form method="post" action="<?= site_url('app/admin/locale') ?>" class="mt-3">
+        <?= csrf_field() ?>
+        <?= th_card('<div class="flex flex-wrap items-center gap-3 p-4">'
+            . '<span class="w-8 h-8 rounded-lg bg-canvas border border-line grid place-items-center text-muted">' . th_icon('tz', 'w-4 h-4') . '</span>'
+            . '<div class="flex-1 min-w-[220px]"><div class="text-[13px] font-medium text-ink">Default language</div>'
+            . '<div class="text-[12px] text-muted">Used for visitors whose browser language is not supported. People can switch from their account menu.</div></div>'
+            . th_select('app_locale', $settings['app_locale'] ?? 'en', [['en', 'English'], ['fr', 'Français']])
             . '<button type="submit" class="h-8 px-3 rounded-lg bg-brand hover:bg-brand-600 text-white text-[12.5px] font-semibold">Save</button>'
             . '</div>') ?>
       </form>
@@ -669,6 +693,8 @@ foreach ($hours as $h) {
         ) ?>
       </form>
       <?php elseif (! empty($pluginTab)): ?>
+      <?php // View-local helpers are not part of the view data; hand them to the plug-in explicitly.
+        $this->setData(['inputCls' => $inputCls, 'groupsById' => $groupsById, 'orgsById' => $orgsById, 'hoursById' => $hoursById]); ?>
       <?= $this->include('agent/admin/' . $pluginTab) ?>
       <?php endif ?>
     </div>
@@ -781,13 +807,16 @@ $dangerDelete = static function (string $action, string $confirm, string $label 
         </select></div>
       <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Phone</label>
         <input name="phone" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
+      <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Organization</label>
+        <?= $orgSelect(null) ?></div>
     </div>
   </form>
 </template>
 
 <?php foreach ($requesters as $u): ?>
 <template id="tpl-editPerson-<?= $u['id'] ?>">
-  <form method="post" action="<?= site_url('app/admin/people/' . $u['id']) ?>" data-modal-title="Edit <?= esc($u['name'], 'attr') ?>" data-modal-sub="<?= esc($u['email'], 'attr') ?>" data-submit="Save">
+  <div data-modal-title="Edit <?= esc($u['name'], 'attr') ?>" data-modal-sub="<?= esc($u['email'], 'attr') ?>" data-submit="Save">
+  <form method="post" action="<?= site_url('app/admin/people/' . $u['id']) ?>" data-primary>
     <?= csrf_field() ?>
     <div class="grid sm:grid-cols-2 gap-3.5">
       <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Full name<span class="text-alert"> *</span></label>
@@ -802,8 +831,21 @@ $dangerDelete = static function (string $action, string $confirm, string $label 
         </select></div>
       <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Phone</label>
         <input name="phone" value="<?= esc($u['phone'] ?? '', 'attr') ?>" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
+      <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Organization</label>
+        <?= $orgSelect(isset($u['org_id']) ? (int) $u['org_id'] : null) ?></div>
     </div>
   </form>
+  <div class="mt-4 pt-3 border-t border-line flex flex-wrap items-center gap-2">
+    <span class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint mr-1">Their data</span>
+    <a href="<?= site_url('app/admin/people/' . $u['id'] . '/export') ?>" class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line bg-white text-[12.5px] font-medium text-ink-500 hover:bg-canvas"><?= th_icon('note', 'w-3.5 h-3.5') ?>Export data (JSON)</a>
+    <form method="post" action="<?= site_url('app/admin/people/' . $u['id'] . '/anonymize') ?>" class="inline"
+          data-confirm="Anonymize <?= esc($u['name'], 'attr') ?>? Their name, email, contact details and sign-in are erased and the account is deactivated. Tickets are kept under &ldquo;Deleted user <?= $u['id'] ?>&rdquo;. This cannot be undone."
+          data-confirm-label="Anonymize" data-confirm-title="Anonymize this person?">
+      <?= csrf_field() ?>
+      <button type="submit" class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-alert-100 bg-white text-[12.5px] font-medium text-alert hover:bg-alert-50"><?= th_icon('trash', 'w-3.5 h-3.5') ?>Anonymize</button>
+    </form>
+  </div>
+  </div>
 </template>
 <?php endforeach ?>
 

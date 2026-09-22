@@ -64,6 +64,15 @@
         "sort-packages": true
     },
     "scripts": {
-        "test": "phpunit"
+        "test": "phpunit --no-coverage",
+        "test:coverage": "phpunit",
+        "cs": "php-cs-fixer fix --dry-run --diff --config=.php-cs-fixer.dist.php",
+        "cs:fix": "php-cs-fixer fix --config=.php-cs-fixer.dist.php"
+    },
+    "scripts-descriptions": {
+        "test": "Run the PHPUnit suite (feature tests need a tickethub_test database, see tests/README.md)",
+        "test:coverage": "Run PHPUnit with code coverage (needs Xdebug or PCOV)",
+        "cs": "Check coding style against the CodeIgniter coding standard (dry run)",
+        "cs:fix": "Fix coding style in place"
     }
 }

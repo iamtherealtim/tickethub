@@ -1,0 +1,52 @@
+# Build context for the TicketHub image. Keep it lean: the framework lives in
+# system/ and is copied; runtime state, secrets, tests and tooling stay out.
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+phpunit.xml
+
+# Dependencies and build output (Composer is only needed for the test suite)
+vendor/
+node_modules/
+build/
+
+# Runtime state — created and owned by the container
+writable/cache/*
+writable/debugbar/*
+writable/logs/*
+writable/session/*
+writable/uploads/*
+!writable/*/index.html
+
+# Tests, docs and repo tooling
+tests/
+docs/
+.github/
+.git/
+.gitignore
+.gitattributes
+.editorconfig
+.claude/
+.phpunit.result.cache
+phpunit.dist.xml
+composer.lock
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+CHANGELOG.md
+*.md
+!README.md
+
+# Docker files themselves (docker/ is needed for the entrypoint and cron loop)
+docker-compose.yml
+docker-compose.override.yml
+Dockerfile
+.dockerignore
+
+# Stray local files
+*.log
+Thumbs.db
+.DS_Store
+northgate-service-desk.html

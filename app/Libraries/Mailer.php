@@ -14,8 +14,11 @@ class Mailer
         return Settings::get('mail_enabled') === '1' && Settings::get('mail_host') !== '';
     }
 
-    /** Raw send. Returns true on success. */
-    public static function send(string $to, string $subject, string $body): bool
+    /**
+     * Raw send. Returns true on success. With $html the message goes out as
+     * HTML with $body as the plain-text alternative.
+     */
+    public static function send(string $to, string $subject, string $body, ?string $html = null): bool
     {
         if (! self::configured()) {
             log_message('info', 'Mailer: skipped "{subject}" to {to} — SMTP not enabled/configured.', ['subject' => $subject, 'to' => $to]);
@@ -32,7 +35,7 @@ class Mailer
             'SMTPPass'   => Settings::get('mail_password'),
             'SMTPCrypto' => Settings::get('mail_encryption', 'tls') === 'none' ? '' : Settings::get('mail_encryption', 'tls'),
             'SMTPTimeout' => 5,
-            'mailType'   => 'text',
+            'mailType'   => $html !== null ? 'html' : 'text',
             'newline'    => "\r\n",
         ]);
 
@@ -40,7 +43,12 @@ class Mailer
             $email->setFrom(Settings::get('mail_from_email'), Settings::get('mail_from_name', 'TicketHub'));
             $email->setTo($to);
             $email->setSubject($subject);
-            $email->setMessage($body);
+            if ($html !== null) {
+                $email->setMessage($html);
+                $email->setAltMessage($body);
+            } else {
+                $email->setMessage($body);
+            }
             if ($email->send(false)) {
                 return true;
             }
@@ -57,6 +65,16 @@ class Mailer
     /** Placeholder map shared by templates and automation actions. */
     public static function vars(array $ticket, array $requester, ?array $agent, array $extra = []): array
     {
+        // Rating links only exist for a resolved ticket with a token; elsewhere
+        // the placeholders collapse to the portal ticket page.
+        $token   = $ticket['csat_token'] ?? null;
+        $rateUrl = $token ? site_url('portal/rate/' . $token . '/0') : site_url('portal/tickets/' . $ticket['code']);
+        $lines   = [];
+        foreach ([1 => 'Poor', 2 => 'Fair', 3 => 'OK', 4 => 'Good', 5 => 'Excellent'] as $n => $label) {
+            $lines[] = $n . ' — ' . $label . ': ' . ($token ? site_url('portal/rate/' . $token . '/' . $n) : $rateUrl);
+        }
+        $rateLinks = implode("\n", $lines);
+
         return [
             '{{ticket.id}}'        => $ticket['code'],
             '{{ticket.subject}}'   => $ticket['subject'],
@@ -70,7 +88,36 @@ class Mailer
             '{{agent.name}}'       => $agent['name'] ?? 'the service desk',
             '{{agent.first}}'      => explode(' ', $agent['name'] ?? 'there')[0],
             '{{message}}'          => $extra['message'] ?? '',
+            '{{rate_url}}'         => $rateUrl,
+            '{{rate_links}}'       => $rateLinks,
         ];
+    }
+
+    /**
+     * Make sure a resolved ticket carries a CSAT token (minted the first time
+     * the resolution email goes out) and return it. Null when the ticket
+     * cannot be rated: not resolved, already rated, or not saved yet.
+     */
+    public static function csatToken(array &$ticket): ?string
+    {
+        if (empty($ticket['id']) || ! in_array($ticket['status'] ?? '', ['Resolved', 'Closed'], true)) {
+            return null;
+        }
+        $db = db_connect();
+        if (! $db->fieldExists('csat_token', 'tickets')) {
+            return null;
+        }
+        $row = $db->table('tickets')->select('csat_token, csat_score')->where('id', (int) $ticket['id'])->get()->getRowArray();
+        if (! $row || $row['csat_score'] !== null) {
+            return null;
+        }
+        if (empty($row['csat_token'])) {
+            $row['csat_token'] = bin2hex(random_bytes(24));
+            $db->table('tickets')->where('id', (int) $ticket['id'])->update(['csat_token' => $row['csat_token']]);
+        }
+        $ticket['csat_token'] = $row['csat_token'];
+
+        return $row['csat_token'];
     }
 
     /**
@@ -146,13 +193,81 @@ class Mailer
             return;
         }
 
+        // The resolution email is the one place a CSAT token is minted: every
+        // path that resolves a ticket ends up here.
+        if ($trigger === 'Status → Resolved') {
+            self::csatToken($ticket);
+        }
+
         $vars = self::vars($ticket, $requester, $agent, $extra);
 
         $subject = strtr($tpl['subject'], $vars);
-        $body    = strtr($tpl['body'] ?? ($subject . "\n\n" . site_url('portal/tickets/' . $ticket['code'])), $vars);
+        $raw     = $tpl['body'] ?? ($subject . "\n\n" . site_url('portal/tickets/' . $ticket['code']));
+        $body    = strtr($raw, $vars);
+
+        // A Markdown reply goes out as HTML (rendered body inside the escaped
+        // template text) with the plain text as the alternative part.
+        $html = null;
+        if ($trigger === 'Public reply sent' && ($extra['format'] ?? '') === 'markdown' && isset($extra['message'])) {
+            $html = self::htmlBody($raw, $vars, (string) $extra['message']);
+        }
+
+        // Per-user opt-outs, when that module is installed.
+        $to = self::filterByPrefs($to, $trigger);
 
         foreach ($to as $addr) {
-            self::send($addr, $subject, $body);
+            self::send($addr, $subject, $body, $html);
         }
+    }
+
+    /** Drop recipients who turned this trigger off in their notification preferences. */
+    private static function filterByPrefs(array $to, string $trigger): array
+    {
+        if (! $to || ! class_exists(\App\Libraries\NotificationPrefs::class)) {
+            return $to;
+        }
+        $ids = [];
+        foreach (db_connect()->table('users')->select('id, email')->whereIn('email', $to)->get()->getResultArray() as $u) {
+            $ids[strtolower($u['email'])] = (int) $u['id'];
+        }
+
+        return array_values(array_filter($to, static function ($addr) use ($ids, $trigger) {
+            $id = $ids[strtolower($addr)] ?? null;
+            try {
+                return $id === null || \App\Libraries\NotificationPrefs::wants($id, $trigger);
+            } catch (\Throwable $e) {
+                return true;
+            }
+        }));
+    }
+
+    /**
+     * HTML version of a text template: the template's own text is escaped
+     * with line breaks kept, URLs become links, and {{message}} is the
+     * rendered Markdown.
+     */
+    private static function htmlBody(string $rawTemplate, array $vars, string $markdown): string
+    {
+        helper('tickethub');
+        $htmlVars = [];
+        foreach ($vars as $k => $v) {
+            $htmlVars[$k] = nl2br(esc((string) $v));
+        }
+        foreach (['{{ticket.url}}', '{{ticket.agent_url}}', '{{rate_url}}'] as $k) {
+            if (isset($vars[$k])) {
+                $htmlVars[$k] = '<a href="' . esc($vars[$k], 'attr') . '">' . esc($vars[$k]) . '</a>';
+            }
+        }
+        $htmlVars['{{message}}'] = '<div style="margin:12px 0;padding:12px 14px;border-left:3px solid #CFE7E1;background:#F7FAF9">'
+            . th_markdown($markdown) . '</div>';
+
+        $inner = strtr(nl2br(esc($rawTemplate)), $htmlVars);
+
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
+            . 'pre{background:#10141C;color:#E3E6EC;padding:10px 12px;border-radius:6px;overflow:auto}'
+            . 'code{font-family:Menlo,Consolas,monospace;font-size:13px}'
+            . 'blockquote{border-left:3px solid #E3E6EC;margin:8px 0;padding-left:10px;color:#5B6577}img{max-width:100%}'
+            . '</style></head><body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.55;color:#10141C">'
+            . '<div style="max-width:640px">' . $inner . '</div></body></html>';
     }
 }

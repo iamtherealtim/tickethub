@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: PHP syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          tools: none
+          coverage: none
+
+      - name: php -l over app/ and tests/
+        run: |
+          set -o pipefail
+          status=0
+          while IFS= read -r -d '' file; do
+            if ! out=$(php -l "$file" 2>&1); then
+              echo "$out"
+              status=1
+            fi
+          done < <(find app tests -name '*.php' -print0)
+          exit $status
+
+  tests:
+    name: PHPUnit (MariaDB 11)
+    runs-on: ubuntu-latest
+    needs: lint
+
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: tickethub_test
+          MARIADB_USER: tickethub
+          MARIADB_PASSWORD: tickethub
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      TH_TEST_DB_HOST: 127.0.0.1
+      TH_TEST_DB_PORT: "3306"
+      TH_TEST_DB_NAME: tickethub_test
+      TH_TEST_DB_USER: tickethub
+      TH_TEST_DB_PASSWORD: tickethub
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: intl, mbstring, mysqli, gd, ldap, zip, curl, json
+          coverage: none
+          tools: composer:v2
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Wait for MariaDB
+        run: |
+          for i in $(seq 1 30); do
+            if mariadb -h127.0.0.1 -utickethub -ptickethub -e 'SELECT 1' tickethub_test >/dev/null 2>&1 \
+               || mysql -h127.0.0.1 -utickethub -ptickethub -e 'SELECT 1' tickethub_test >/dev/null 2>&1; then
+              echo "MariaDB ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "MariaDB did not become ready"; exit 1
+
+      - name: Prepare writable/
+        run: mkdir -p writable/cache writable/logs writable/session writable/uploads writable/debugbar
+
+      # --fail-on-skipped: the feature tests skip themselves when the test database
+      # is unreachable; in CI that must be a failure, never a silent pass.
+      - name: PHPUnit
+        run: php vendor/bin/phpunit --no-coverage --fail-on-skipped --display-skipped
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpunit-logs
+          path: build/logs/
+          if-no-files-found: ignore
+
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: docker build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: tickethub:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

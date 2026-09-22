@@ -12,7 +12,15 @@ class TicketsController extends BaseController
     private const PHP_VIEWS = ['overdue'];
 
     /** List filters carried on the query string, saved views and the export link. */
-    private const FILTER_KEYS = ['q', 'status', 'priority', 'type', 'category', 'source', 'group', 'agent', 'sort'];
+    private const FILTER_KEYS = ['q', 'status', 'priority', 'type', 'category', 'source', 'group', 'agent', 'org', 'sort'];
+
+    /** Organizations exist once another module's migration has added users.org_id. */
+    private function orgFilterAvailable(): bool
+    {
+        static $ok = null;
+
+        return $ok ??= $this->db->fieldExists('org_id', 'users') && $this->db->tableExists('organizations');
+    }
 
     /** Views this agent can pick: their own, plus anything shared with the team. */
     private function savedViews(): array
@@ -132,6 +140,11 @@ class TicketsController extends BaseController
         if (($a = (string) $r->getGet('agent')) !== '') {
             $a === 'none' ? $b->where('agent_id', null) : $b->where('agent_id', (int) $a);
         }
+        // Organization: a property of the requester, so it is applied through
+        // the users row rather than a column on tickets.
+        if (($org = (int) $r->getGet('org')) && $this->orgFilterAvailable()) {
+            $b->where('requester_id IN (SELECT id FROM users WHERE org_id = ' . $org . ')', null, false);
+        }
         if ($q = trim((string) $r->getGet('q'))) {
             $like = '%' . $this->db->escapeLikeString($q) . '%';
             $b->groupStart()
@@ -202,6 +215,7 @@ class TicketsController extends BaseController
             'page' => $page, 'perPage' => $perPage, 'total' => $total,
             'users' => $this->users(), 'lastMsgs' => $lastMsgs,
             'filters' => $filters,
+            'orgs' => $this->orgFilterAvailable() ? $this->db->table('organizations')->orderBy('name')->get()->getResultArray() : [],
         ]);
     }
 
@@ -262,6 +276,13 @@ class TicketsController extends BaseController
             'attachments' => $this->storeUploads(),
         ]);
         $this->saveCustomFields((int) $t['id'], 'agents');
+        // Started from a template: its task list comes along.
+        if ($tplId = (int) ($p['template_id'] ?? 0)) {
+            $tpl = $this->db->table('ticket_templates')->where('id', $tplId)->get()->getRowArray();
+            if ($tpl && TicketIntake::addTemplateTasks((int) $t['id'], $tpl)) {
+                $this->addSystemNote((int) $t['id'], 'Tasks added from template "' . $tpl['name'] . '"');
+            }
+        }
         $this->toast($t['code'] . ' created');
 
         return redirect()->to('/app/tickets/' . $t['code']);
@@ -336,6 +357,8 @@ class TicketsController extends BaseController
             'timeEntries' => $timeEntries, 'links' => $links,
             'timeTotal' => array_sum(array_column($timeEntries, 'minutes')),
             'canDecide' => in_array($this->me['role'] ?? '', ['Administrator', 'Supervisor'], true),
+            'canTemplate' => in_array($this->me['role'] ?? '', ['Administrator', 'Supervisor'], true) && $this->db->tableExists('ticket_templates'),
+            'cannedScoped' => $this->db->fieldExists('scope', 'canned_responses'),
             't' => $t, 'messages' => $messages, 'tasks' => $tasks,
             'linkedAssets' => $linkedAssets, 'allAssets' => $allAssets,
             'users' => $this->users(), 'requesterCount' => $requesterCount,
@@ -374,10 +397,14 @@ class TicketsController extends BaseController
         // read and the write share a transaction and a row lock.
         $this->db->transStart();
         $t = $this->lockTicket((int) $t['id']) ?? $t;
-        $this->db->table('ticket_messages')->insert([
+        $row = [
             'ticket_id' => $t['id'], 'kind' => $kind, 'user_id' => $this->me['id'],
             'body' => $body, 'attachments' => json_encode($atts), 'created_at' => $now,
-        ]);
+        ];
+        if (TicketIntake::hasMessageFormat()) {
+            $row['format'] = 'markdown';
+        }
+        $this->db->table('ticket_messages')->insert($row);
         $upd = ['updated_at' => $now];
 
         if (! $t['agent_id']) {
@@ -403,7 +430,7 @@ class TicketsController extends BaseController
 
         $fresh = array_merge($t, $upd);
         if ($kind === 'reply') {
-            $this->notify('Public reply sent', $fresh, ['message' => $body]);
+            $this->notify('Public reply sent', $fresh, ['message' => $body, 'format' => $row['format'] ?? 'text']);
             TicketIntake::notifyReply($fresh, (int) $this->me['id'], $this->me['name']);
         }
         if (($upd['status'] ?? '') === 'Resolved') {
@@ -1377,5 +1404,115 @@ class TicketsController extends BaseController
         }
 
         return redirect()->back();
+    }
+
+    /* ---------- Markdown editor + canned responses ---------- */
+
+    /** POST app/tickets/preview — rendered HTML for the editor's Preview tab. */
+    public function preview()
+    {
+        return $this->markdownPreview();
+    }
+
+    /** POST app/tickets/(code)/inline-image — a pasted/dropped image, as JSON {url}. */
+    public function inlineImage(string $code)
+    {
+        $t = $this->ticketByCode($code);
+        if (! $t || ! $this->canSeeTicket($t)) {
+            return $this->editorJson(['error' => 'Ticket not found'], 404);
+        }
+        [$name, $err] = $this->storeInlineImage($t);
+        if ($err) {
+            return $this->editorJson(['error' => $err], 422);
+        }
+
+        return $this->editorJson(['url' => '/files/' . $name, 'name' => $name]);
+    }
+
+    /** GET app/canned.json — responses this agent may insert, for the picker. */
+    public function cannedJson()
+    {
+        $me   = (int) $this->me['id'];
+        $rows = array_map(static fn ($c) => [
+            'id' => (int) $c['id'], 'title' => $c['title'], 'body' => $c['body'],
+            'scope' => $c['scope'] ?? 'global', 'shortcut' => $c['shortcut'] ?? null,
+            'mine' => ($c['scope'] ?? '') === 'personal' && (int) ($c['owner_id'] ?? 0) === $me,
+        ], $this->cannedResponses());
+
+        return $this->response->setHeader('Cache-Control', 'no-store')->setJSON(['responses' => $rows]);
+    }
+
+    /** POST app/canned — "Save as response": a personal canned response from the reply box. */
+    public function cannedCreate()
+    {
+        $title = trim((string) $this->request->getPost('title'));
+        $body  = trim((string) $this->request->getPost('body'));
+        if ($title === '' || $body === '') {
+            $this->toast('A response needs a title and a body', 'warn');
+
+            return redirect()->back();
+        }
+        if (! $this->db->fieldExists('scope', 'canned_responses')) {
+            $this->toast('Personal responses need the latest migration', 'warn');
+
+            return redirect()->back();
+        }
+        $shortcut = strtolower(trim((string) $this->request->getPost('shortcut'), " /\t"));
+        $shortcut = preg_replace('/[^a-z0-9_-]+/', '-', $shortcut) ?: null;
+        $now = date('Y-m-d H:i:s');
+        $this->db->table('canned_responses')->insert([
+            'title' => mb_substr($title, 0, 80), 'body' => $body, 'scope' => 'personal',
+            'owner_id' => (int) $this->me['id'], 'group_id' => null,
+            'shortcut' => $shortcut ? mb_substr($shortcut, 0, 40) : null,
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $this->toast('Saved to your responses');
+
+        return redirect()->back();
+    }
+
+    /** POST app/canned/(id)/delete — own personal responses only. */
+    public function cannedDelete(int $id)
+    {
+        if ($this->db->fieldExists('scope', 'canned_responses')) {
+            $this->db->table('canned_responses')->where('id', $id)->where('scope', 'personal')->where('owner_id', (int) $this->me['id'])->delete();
+            $this->toast($this->db->affectedRows() ? 'Response removed' : 'That response is not yours to remove', $this->db->affectedRows() ? 'ok' : 'warn');
+        }
+
+        return redirect()->back();
+    }
+
+    /** POST app/tickets/(code)/save-template — turn this ticket into a reusable template (Supervisor+). */
+    public function saveAsTemplate(string $code)
+    {
+        $t = $this->ticketScoped($code);
+        if (! $t) {
+            return redirect()->to('/app/tickets');
+        }
+        if (! in_array($this->me['role'] ?? '', ['Administrator', 'Supervisor'], true)) {
+            $this->toast('Only supervisors and administrators can save templates', 'warn');
+
+            return redirect()->to('/app/tickets/' . $code);
+        }
+        if (! $this->db->tableExists('ticket_templates')) {
+            $this->toast('Templates need the latest migration', 'warn');
+
+            return redirect()->to('/app/tickets/' . $code);
+        }
+        $name = trim((string) $this->request->getPost('name')) ?: $t['subject'];
+        $desc = $this->db->table('ticket_messages')->where('ticket_id', $t['id'])->where('kind', 'description')->orderBy('id')->get()->getRowArray();
+        $tasks = array_column($this->db->table('ticket_tasks')->where('ticket_id', $t['id'])->orderBy('id')->get()->getResultArray(), 'title');
+        $now = date('Y-m-d H:i:s');
+        $this->db->table('ticket_templates')->insert([
+            'name' => mb_substr($name, 0, 100), 'subject' => $t['subject'],
+            'body' => $desc['body'] ?? '', 'type' => $t['type'], 'priority' => $t['priority'], 'category' => $t['category'],
+            'group_id' => $t['group_id'] ?: null, 'agent_id' => $t['agent_id'] ?: null,
+            'tasks' => json_encode(array_values($tasks)), 'custom' => null,
+            'created_by' => (int) $this->me['id'], 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        \App\Libraries\Audit::log('template.created', $name . ' (from ' . $code . ')');
+        $this->toast('Template "' . $name . '" saved — it is now in the New ticket form');
+
+        return redirect()->to('/app/tickets/' . $code);
     }
 }

@@ -38,11 +38,27 @@ class TicketsCron extends BaseCommand
 
         try {
             $actions = (new AutomationEngine())->run();
+            // Recurring tickets: due schedules raise a ticket from their template.
+            // Inside the lock so an overlapping run cannot double-raise.
+            try {
+                $actions = array_merge($actions, \App\Libraries\TicketIntake::runDueRecurring());
+            } catch (\Throwable $e) {
+                log_message('error', 'Recurring tickets failed: {msg}', ['msg' => $e->getMessage()]);
+                $actions[] = 'Recurring tickets failed: ' . $e->getMessage();
+            }
             if (GraphMail::configured()) {
                 $actions = array_merge($actions, GraphMail::poll());
             }
             if ($pdq = \App\Libraries\PdqConnect::maybeAutoSync()) {
                 $actions[] = $pdq;
+            }
+            // Failed webhook deliveries retry on a backoff schedule.
+            try {
+                if ($retried = \App\Libraries\Webhooks::retryDue()) {
+                    $actions[] = $retried . ' webhook delivery attempt(s)';
+                }
+            } catch (\Throwable $e) {
+                log_message('error', 'Webhook retries failed: {msg}', ['msg' => $e->getMessage()]);
             }
         } finally {
             flock($lock, LOCK_UN);

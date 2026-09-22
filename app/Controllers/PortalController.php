@@ -203,10 +203,14 @@ class PortalController extends CatalogController
             $body = '(attachment)';
         }
         $now = date('Y-m-d H:i:s');
-        $this->db->table('ticket_messages')->insert([
+        $row = [
             'ticket_id' => $t['id'], 'kind' => 'reply', 'user_id' => $this->me['id'],
             'body' => $body, 'attachments' => json_encode($atts), 'created_at' => $now,
-        ]);
+        ];
+        if (\App\Libraries\TicketIntake::hasMessageFormat()) {
+            $row['format'] = 'markdown';
+        }
+        $this->db->table('ticket_messages')->insert($row);
         $upd = ['updated_at' => $now];
         if ($t['status'] === 'Pending') {
             $upd['status'] = 'Open';
@@ -269,5 +273,119 @@ class PortalController extends CatalogController
         ));
 
         return view('portal/_search_results', ['arts' => array_slice($arts, 0, 4), 'items' => array_slice($items, 0, 3), 'q' => $q]);
+    }
+
+    /* ---------- Markdown editor (portal reply box) ---------- */
+
+    public function preview()
+    {
+        return $this->markdownPreview();
+    }
+
+    public function inlineImage(string $code)
+    {
+        $t = $this->myTicketByCode($code);
+        if (! $t) {
+            return $this->editorJson(['error' => 'Ticket not found'], 404);
+        }
+        [$name, $err] = $this->storeInlineImage($t);
+        if ($err) {
+            return $this->editorJson(['error' => $err], 422);
+        }
+
+        return $this->editorJson(['url' => '/files/' . $name, 'name' => $name]);
+    }
+
+    /* ---------- CSAT from the resolution email (no sign-in) ---------- */
+
+    /** The ticket behind a rating token, or null when the token is unknown. */
+    private function ticketByCsatToken(string $token): ?array
+    {
+        if (! preg_match('/^[a-f0-9]{48}$/', $token) || ! $this->db->fieldExists('csat_token', 'tickets')) {
+            return null;
+        }
+
+        return $this->db->table('tickets')->where('csat_token', $token)->get()->getRowArray();
+    }
+
+    /** Render the standalone rating page. */
+    private function ratePage(array $vars)
+    {
+        if (($vars['state'] ?? '') === 'invalid') {
+            $this->response->setStatusCode(404);
+        }
+
+        return view('portal/rate', $vars + ['title' => 'Rate this ticket']);
+    }
+
+    /**
+     * GET portal/rate/(token)/(score). Score 1–5 records the rating once; 0
+     * (or an already-rated ticket) just shows the page. The token is single
+     * use for scoring; a comment is accepted once within seven days.
+     */
+    public function rateByToken(string $token, int $score)
+    {
+        $t = $this->ticketByCsatToken($token);
+        if (! $t) {
+            return $this->ratePage(['state' => 'invalid', 't' => null, 'token' => $token]);
+        }
+        if (th_is_open($t)) {
+            return $this->ratePage(['state' => 'open', 't' => $t, 'token' => $token]);
+        }
+        if ($t['csat_score'] !== null) {
+            return $this->ratePage(['state' => 'rated', 't' => $t, 'token' => $token, 'canComment' => $this->canComment($t)]);
+        }
+        if ($score < 1 || $score > 5) {
+            return $this->ratePage(['state' => 'pick', 't' => $t, 'token' => $token]);
+        }
+        $this->db->table('tickets')->where('id', $t['id'])->where('csat_score', null)->update([
+            'csat_score' => $score, 'csat_comment' => null, 'csat_rated_at' => date('Y-m-d H:i:s'),
+        ]);
+        if ($this->db->affectedRows() < 1) {
+            // Raced with a second tap: show what stuck.
+            $t = $this->ticketByCsatToken($token) ?? $t;
+
+            return $this->ratePage(['state' => 'rated', 't' => $t, 'token' => $token, 'canComment' => $this->canComment($t)]);
+        }
+        $t['csat_score']    = $score;
+        $t['csat_rated_at'] = date('Y-m-d H:i:s');
+        try {
+            $this->db->table('ticket_messages')->insert([
+                'ticket_id' => $t['id'], 'kind' => 'system', 'user_id' => null,
+                'body' => 'Rated ' . $score . '/5 by email', 'attachments' => '[]', 'created_at' => date('Y-m-d H:i:s'),
+            ]);
+        } catch (\Throwable $e) {
+            // cosmetic
+        }
+
+        return $this->ratePage(['state' => 'thanks', 't' => $t, 'token' => $token, 'canComment' => true]);
+    }
+
+    /** A comment may be added once, within seven days of the rating. */
+    private function canComment(array $t): bool
+    {
+        if ($t['csat_score'] === null || ! empty($t['csat_comment'])) {
+            return false;
+        }
+        $at = ! empty($t['csat_rated_at']) ? strtotime($t['csat_rated_at']) : null;
+
+        return $at === null || (time() - $at) <= 7 * 86400;
+    }
+
+    /** POST portal/rate/(token) — the optional comment after a rating. */
+    public function rateComment(string $token)
+    {
+        $t = $this->ticketByCsatToken($token);
+        if (! $t || $t['csat_score'] === null) {
+            return $this->ratePage(['state' => 'invalid', 't' => null, 'token' => $token]);
+        }
+        $comment = trim((string) $this->request->getPost('comment'));
+        if ($comment === '' || ! $this->canComment($t)) {
+            return $this->ratePage(['state' => 'rated', 't' => $t, 'token' => $token, 'canComment' => $this->canComment($t)]);
+        }
+        $this->db->table('tickets')->where('id', $t['id'])->where('csat_comment', null)->update(['csat_comment' => mb_substr($comment, 0, 2000)]);
+        $t['csat_comment'] = $comment;
+
+        return $this->ratePage(['state' => 'commented', 't' => $t, 'token' => $token, 'canComment' => false]);
     }
 }

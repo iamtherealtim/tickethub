@@ -1,0 +1,2354 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TicketHub Service Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        ink:    { DEFAULT:'#10141C', 700:'#1A2130', 600:'#232B3C', 500:'#333C50' },
+        muted:  '#5B6577',
+        faint:  '#8B93A3',
+        line:   '#E3E6EC',
+        canvas: '#F1F3F7',
+        brand:  { DEFAULT:'#0E7C6B', 600:'#0B6558', 100:'#CFE7E1', 50:'#E7F3F0' },
+        signal: { DEFAULT:'#B8760B', 400:'#E9A23B', 100:'#F7E4C4', 50:'#FCF4E6' },
+        alert:  { DEFAULT:'#BC332D', 400:'#DC5B54', 100:'#F5D4D2', 50:'#FBEBEA' },
+        violet: { DEFAULT:'#5A4FB0', 50:'#EEECF8' }
+      },
+      fontFamily: {
+        display:['Archivo','system-ui','sans-serif'],
+        sans:['"IBM Plex Sans"','system-ui','sans-serif'],
+        mono:['"IBM Plex Mono"','ui-monospace','monospace']
+      },
+      boxShadow: {
+        card:'0 1px 2px rgba(16,20,28,.05), 0 1px 3px rgba(16,20,28,.05)',
+        pop:'0 16px 40px -12px rgba(16,20,28,.28), 0 2px 8px rgba(16,20,28,.08)'
+      },
+      borderRadius:{ xl:'10px', '2xl':'14px' }
+    }
+  }
+}
+</script>
+<style>
+  html,body{height:100%}
+  body{background:#F1F3F7;color:#10141C;font-family:"IBM Plex Sans",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  h1,h2,h3,.font-display{font-family:Archivo,system-ui,sans-serif;letter-spacing:-.015em}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#C9CED8;border:3px solid transparent;background-clip:content-box;border-radius:8px}
+  ::-webkit-scrollbar-thumb:hover{background:#A9B0BE;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  :focus-visible{outline:2px solid #0E7C6B;outline-offset:2px;border-radius:4px}
+  .sidebar ::-webkit-scrollbar-thumb{background:#333C50;background-clip:content-box}
+  /* SLA burn bar — the signature device */
+  .burn{height:2px;background:#E9ECF1;overflow:hidden}
+  .burn > i{display:block;height:100%;transition:width .4s ease}
+  .led{display:inline-block;width:8px;height:8px;border-radius:2px;flex:none}
+  .row-hover:hover{background:#F7F8FB}
+  .tick{font-variant-numeric:tabular-nums}
+  .fade-in{animation:fade .22s ease both}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .pop-in{animation:pop .16s cubic-bezier(.2,.8,.3,1) both}
+  @keyframes pop{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+  .stripe{background-image:repeating-linear-gradient(135deg,rgba(188,51,45,.10) 0 6px,transparent 6px 12px)}
+  input[type=checkbox]{accent-color:#0E7C6B}
+  select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235B6577' stroke-width='2'><path d='m6 9 6 6 6-6'/></svg>");background-repeat:no-repeat;background-position:right 8px center;appearance:none;padding-right:28px}
+  .prose-kb h2{font-size:1.05rem;font-weight:600;margin:1.4rem 0 .5rem}
+  .prose-kb p{margin:.6rem 0;line-height:1.7;color:#333C50}
+  .prose-kb ul{margin:.6rem 0 .6rem 1.1rem;list-style:disc;line-height:1.8;color:#333C50}
+  .prose-kb code{font-family:"IBM Plex Mono",monospace;font-size:.85em;background:#EEF0F4;padding:1px 5px;border-radius:4px}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body class="h-full">
+  <div id="app" class="h-full"></div>
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[90] flex flex-col items-center gap-2"></div>
+<script>
+/* ============================================================
+   TicketHub Service Desk — single-file ITSM prototype
+   Native HTML + Tailwind (CDN) + vanilla JS. No build step.
+   ============================================================ */
+
+/* ---------- icons ---------- */
+const ICONS = {
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
+  inbox:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  x:'<path d="M18 6 6 18M6 6l12 12"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  down:'<path d="m6 9 6 6 6-6"/>',
+  right:'<path d="m9 18 6-6-6-6"/>',
+  back:'<path d="M19 12H5m7-7-7 7 7 7"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  filter:'<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
+  dots:'<circle cx="12" cy="5" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="19" r="1.4" fill="currentColor"/>',
+  clip:'<path d="M21.4 11.05 12.2 20.2a5 5 0 0 1-7.07-7.07l9.19-9.19a3.33 3.33 0 1 1 4.71 4.71l-9.2 9.19a1.67 1.67 0 1 1-2.35-2.36l8.49-8.48"/>',
+  send:'<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>',
+  book:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+  server:'<rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01M6 17h.01"/>',
+  branch:'<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7"/><path d="M18 10.5a6 6 0 0 1-6 6H9"/>',
+  warn:'<path d="M10.3 3.7 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  chart:'<path d="M3 3v18h18"/><path d="M7 15v3M12 10v8M17 6v12"/>',
+  cog:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  star:'<path d="m12 2.6 2.9 5.9 6.5.95-4.7 4.58 1.1 6.47L12 17.45 6.2 20.5l1.1-6.47L2.6 9.45l6.5-.95z"/>',
+  tag:'<path d="M20.6 13.4 12 4.8 4 4l.8 8 8.6 8.6a2 2 0 0 0 2.8 0l4.4-4.4a2 2 0 0 0 0-2.8z"/><path d="M8.5 8.5h.01"/>',
+  link:'<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>',
+  refresh:'<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/>',
+  home:'<path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  layers:'<path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
+  mail:'<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2.5 7 9.5 6 9.5-6"/>',
+  laptop:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/>',
+  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+  edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
+  zap:'<path d="M13 2 3 14h8l-1 8 10-12h-8z"/>',
+  ext:'<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>',
+  monitor:'<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  phone:'<path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 12l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2z"/>',
+  note:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/>',
+  lock:'<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+  play:'<path d="M6 4l14 8-14 8z"/>',
+  cmd:'<path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 0 0 0-6z"/>'
+};
+function icon(name, cls='w-4 h-4'){
+  return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]||''}</svg>`;
+}
+/* ---------- time helpers ---------- */
+const NOW = new Date();
+const H = 3600000;
+const ago   = h => new Date(NOW.getTime() - h * H);
+const ahead = h => new Date(NOW.getTime() + h * H);
+
+/* ---------- seed data ---------- */
+const DB = {
+  groups: [
+    { id:'g1', name:'Service Desk',        desc:'First line triage and support', members:['a1','a2'], hours:'bh1' },
+    { id:'g2', name:'Network & Infra',     desc:'Connectivity, servers, datacentre', members:['a3'], hours:'bh2' },
+    { id:'g3', name:'Endpoint Engineering',desc:'Laptops, mobile, imaging', members:['a4'], hours:'bh1' },
+    { id:'g4', name:'Identity & Access',   desc:'Accounts, SSO, permissions', members:['a5'], hours:'bh1' },
+    { id:'g5', name:'Applications',        desc:'Business systems and integrations', members:['a6'], hours:'bh1' }
+  ],
+  agents: [
+    { id:'a1', name:'Maya Ortiz',    title:'Service Desk Lead',   role:'Administrator', group:'g1', email:'maya.ortiz@northgate.co', color:'brand',  active:true },
+    { id:'a2', name:'Devin Park',    title:'Support Analyst',     role:'Agent',         group:'g1', email:'devin.park@northgate.co', color:'violet', active:true },
+    { id:'a3', name:'Priya Raman',   title:'Network Engineer',    role:'Agent',         group:'g2', email:'priya.raman@northgate.co', color:'signal', active:true },
+    { id:'a4', name:'Tom Baird',     title:'Endpoint Engineer',   role:'Agent',         group:'g3', email:'tom.baird@northgate.co', color:'ink',    active:true },
+    { id:'a5', name:'Aisha Bello',   title:'IAM Specialist',      role:'Agent',         group:'g4', email:'aisha.bello@northgate.co', color:'alert',  active:true },
+    { id:'a6', name:'Luis Ferreira', title:'Applications Analyst',role:'Supervisor',    group:'g5', email:'luis.ferreira@northgate.co', color:'brand',  active:false }
+  ],
+  users: [
+    { id:'u1', name:'Jordan Whitfield', dept:'Finance',     site:'Toronto HQ',  title:'Financial Analyst', email:'jordan.whitfield@northgate.co', phone:'+1 416 555 0148', color:'ink' },
+    { id:'u2', name:'Camille Roy',      dept:'Marketing',   site:'Montréal',    title:'Brand Manager',     email:'camille.roy@northgate.co', phone:'+1 514 555 0192', color:'violet' },
+    { id:'u3', name:'Ben Osei',         dept:'Sales',       site:'Remote',      title:'Account Executive', email:'ben.osei@northgate.co', phone:'+1 647 555 0110', color:'signal' },
+    { id:'u4', name:'Hana Suzuki',      dept:'Engineering', site:'Toronto HQ',  title:'Staff Engineer',    email:'hana.suzuki@northgate.co', phone:'+1 416 555 0177', color:'brand' },
+    { id:'u5', name:'Marcus Doyle',     dept:'Operations',  site:'Mississauga', title:'Warehouse Lead',    email:'marcus.doyle@northgate.co', phone:'+1 905 555 0133', color:'alert' },
+    { id:'u6', name:'Elena Petrova',    dept:'People',      site:'Toronto HQ',  title:'HR Partner',        email:'elena.petrova@northgate.co', phone:'+1 416 555 0165', color:'ink' },
+    { id:'u7', name:'Sam Nguyen',       dept:'Legal',       site:'Vancouver',   title:'Counsel',           email:'sam.nguyen@northgate.co', phone:'+1 604 555 0121', color:'violet' },
+    { id:'u8', name:'Rafi Haddad',      dept:'Facilities',  site:'Mississauga', title:'Facilities Coord.', email:'rafi.haddad@northgate.co', phone:'+1 905 555 0154', color:'signal' }
+  ],
+  tickets: [],
+  assets: [
+    { id:'AST-0912', name:'MBP-14 / JW-0912',  type:'Laptop',   model:'MacBook Pro 14" M3', serial:'C02XK1PLQ6NY', user:'u1', site:'Toronto HQ',  status:'In use',     warranty:ahead(24*280), os:'macOS 15.2' },
+    { id:'AST-0741', name:'DELL-7440 / CR',    type:'Laptop',   model:'Dell Latitude 7440', serial:'8XK2P41',      user:'u2', site:'Montréal',    status:'In use',     warranty:ahead(24*60),  os:'Windows 11 23H2' },
+    { id:'AST-1180', name:'iPhone 15 / BO',    type:'Mobile',   model:'iPhone 15 128GB',    serial:'F9GYT2KQ1M',   user:'u3', site:'Remote',      status:'In use',     warranty:ahead(24*140), os:'iOS 18.3' },
+    { id:'AST-0334', name:'TOR-SW-CORE-02',    type:'Switch',   model:'Cisco C9300-48P',    serial:'FOC2317L0KZ',  user:null, site:'Toronto HQ',  status:'In use',     warranty:ahead(24*400), os:'IOS-XE 17.9' },
+    { id:'AST-0556', name:'TOR-VPN-01',        type:'Server',   model:'Dell PowerEdge R650',serial:'JH8821Q',      user:null, site:'Toronto HQ',  status:'In use',     warranty:ahead(24*95),  os:'Ubuntu 22.04' },
+    { id:'AST-0620', name:'MISS-PRN-FLOOR2',   type:'Printer',  model:'HP LaserJet E60155', serial:'CNB7K21094',   user:null, site:'Mississauga', status:'Needs repair', warranty:ago(24*40),  os:'—' },
+    { id:'AST-0455', name:'MBP-16 / HS',       type:'Laptop',   model:'MacBook Pro 16" M2', serial:'C02ZL9PMTY1',  user:'u4', site:'Toronto HQ',  status:'In use',     warranty:ahead(24*30),  os:'macOS 15.1' },
+    { id:'AST-0198', name:'Dock-TB4 spare #12',type:'Dock',     model:'CalDigit TS4',       serial:'TS4-88120',    user:null, site:'Toronto HQ',  status:'In stock',   warranty:ahead(24*200), os:'—' },
+    { id:'AST-0877', name:'LAT-5540 / MD',     type:'Laptop',   model:'Dell Latitude 5540', serial:'2JK9V71',      user:'u5', site:'Mississauga', status:'In use',     warranty:ahead(24*12),  os:'Windows 11 23H2' },
+    { id:'AST-0301', name:'Adobe CC — 40 seats',type:'License', model:'Creative Cloud Team',serial:'LIC-ADB-40',   user:null, site:'—',           status:'In use',     warranty:ahead(24*88),  os:'—' }
+  ],
+  articles: [
+    { id:'kb1', title:'Reset your TicketHub password', cat:'Accounts & access', status:'Published', author:'a5', updated:ago(72), views:2841, up:412, down:19, tags:['password','sso'],
+      body:`<p>You can reset your own password at any time from the identity portal — no ticket needed. The change applies to email, VPN, and every app behind single sign-on within about a minute.</p><h2>Reset it yourself</h2><ul><li>Go to <code>id.northgate.co/reset</code> on any device.</li><li>Enter your work email and approve the push notification on your phone.</li><li>Choose a new passphrase of at least 14 characters.</li></ul><h2>If the push never arrives</h2><p>Your enrolled device may have changed. Open a ticket with the Service Desk and an analyst will re-enrol you after an identity check. Bring photo ID if you are on site.</p><h2>Password rules</h2><ul><li>14 characters minimum, no expiry</li><li>Cannot reuse your last 5 passphrases</li><li>Blocked if it appears in a known breach list</li></ul>` },
+    { id:'kb2', title:'Connect to VPN from a personal network', cat:'Network', status:'Published', author:'a3', updated:ago(30), views:1930, up:288, down:41, tags:['vpn','remote'],
+      body:`<p>TicketHub VPN uses certificate-based authentication. The certificate installs automatically the first time you connect from a managed laptop.</p><h2>First connection</h2><ul><li>Open the TicketHub VPN client from your applications folder.</li><li>Select the gateway closest to you — <code>tor-vpn-01</code> for Canada, <code>ams-vpn-02</code> for Europe.</li><li>Approve the MFA prompt.</li></ul><h2>Common errors</h2><p><code>Error 812</code> means your certificate has expired. Reconnect on the office network once, or raise a ticket and we will push a fresh certificate.</p><p>Slow throughput on home Wi-Fi is usually a 2.4GHz band issue. Move to the 5GHz SSID before opening a ticket.</p>` },
+    { id:'kb3', title:'Request software that is not in the catalog', cat:'Software', status:'Published', author:'a6', updated:ago(190), views:864, up:120, down:8, tags:['software','procurement'],
+      body:`<p>Anything not listed in the service catalog needs a security and licensing review before it can be installed. Plan for three to five business days.</p><h2>What to include in your request</h2><ul><li>Vendor name and product page</li><li>What the tool does that catalog software cannot</li><li>Whether it stores customer or employee data</li><li>Your cost centre for the licence</li></ul><h2>What happens next</h2><p>Applications reviews the request, Security reviews data handling, and your manager approves the spend. You will see each approval on the ticket as it clears.</p>` },
+    { id:'kb4', title:'Set up a new starter on day one', cat:'Onboarding', status:'Published', author:'a1', updated:ago(14), views:1204, up:203, down:6, tags:['onboarding','hr'],
+      body:`<p>Hiring managers raise the onboarding request at least five working days before the start date so hardware can be imaged and shipped.</p><h2>What we provision</h2><ul><li>Laptop, dock, and one external monitor</li><li>Email, calendar, and directory entry</li><li>Access to the apps assigned to the person's role profile</li></ul><h2>Day one</h2><p>The starter collects their laptop from the Service Desk on floor 3, or receives it by courier if remote. Sign-in uses the temporary passphrase sent to the hiring manager.</p>` },
+    { id:'kb5', title:'Printing from a personal device', cat:'Hardware', status:'Published', author:'a4', updated:ago(240), views:512, up:64, down:22, tags:['printing'],
+      body:`<p>Personal devices cannot print directly to office printers. Use secure release printing instead.</p><h2>How it works</h2><ul><li>Email your document to <code>print@northgate.co</code> from your work address.</li><li>Tap your badge on any printer within four hours.</li><li>Select the job and press release.</li></ul><p>Jobs older than four hours are deleted automatically.</p>` },
+    { id:'kb6', title:'Recognising a phishing email', cat:'Security', status:'Published', author:'a5', updated:ago(56), views:1670, up:340, down:5, tags:['security','phishing'],
+      body:`<p>Report anything suspicious with the Report Phish button in Outlook. Reporting a legitimate message costs nothing; ignoring a real one can cost a great deal.</p><h2>Signals worth a second look</h2><ul><li>Urgency about money, payroll, or gift cards</li><li>A reply-to address that differs from the sender</li><li>Links that resolve to a domain you do not recognise</li><li>A first-time sender asking you to break a process</li></ul><h2>If you already clicked</h2><p>Disconnect from the network and call the Service Desk on extension 4400. Speed matters more than tidiness here.</p>` },
+    { id:'kb7', title:'Meeting room AV troubleshooting', cat:'Hardware', status:'Draft', author:'a4', updated:ago(6), views:0, up:0, down:0, tags:['av','rooms'],
+      body:`<p>Draft — pending review by Facilities.</p><h2>No display on the room screen</h2><ul><li>Wake the panel with the touch controller before connecting.</li><li>Use the USB-C cable at the table, not the HDMI spur.</li></ul>` }
+  ],
+  catalog: [
+    { id:'c1', name:'New laptop',            cat:'Hardware',        icon:'laptop', desc:'Standard or engineering spec, delivered in 3 business days.', sla:'3 business days', approval:'Manager', fields:[{k:'spec',label:'Specification',type:'select',opts:['Standard — 16GB','Engineering — 32GB','Design — 32GB + GPU']},{k:'reason',label:'Why do you need it?',type:'textarea'}] },
+    { id:'c2', name:'Software licence',      cat:'Software',        icon:'layers', desc:'Request a seat for catalog-approved software.', sla:'2 business days', approval:'Manager', fields:[{k:'app',label:'Application',type:'select',opts:['Adobe Creative Cloud','Figma','Tableau','JetBrains','Miro']},{k:'cc',label:'Cost centre',type:'text'}] },
+    { id:'c3', name:'Application access',    cat:'Accounts & access',icon:'lock',  desc:'Add or change your permissions in a business system.', sla:'1 business day', approval:'System owner', fields:[{k:'sys',label:'System',type:'select',opts:['NetSuite','Salesforce','Workday','Snowflake','Jira']},{k:'level',label:'Access level',type:'select',opts:['Read only','Contributor','Approver']}] },
+    { id:'c4', name:'Onboard a new starter', cat:'Onboarding',      icon:'users',  desc:'Hardware, accounts, and app access for a new hire.', sla:'5 business days', approval:'None', fields:[{k:'starter',label:'Starter name',type:'text'},{k:'start',label:'Start date',type:'date'},{k:'role',label:'Role profile',type:'select',opts:['Sales','Engineering','Finance','Marketing','Operations']}] },
+    { id:'c5', name:'Offboard an employee',  cat:'Onboarding',      icon:'logout', desc:'Revoke access and recover equipment on the last day.', sla:'2 business days', approval:'People team', fields:[{k:'who',label:'Employee name',type:'text'},{k:'last',label:'Last working day',type:'date'}] },
+    { id:'c6', name:'Mobile phone and plan', cat:'Hardware',        icon:'phone',  desc:'Company mobile with a Canadian data plan.', sla:'4 business days', approval:'Manager', fields:[{k:'device',label:'Device',type:'select',opts:['iPhone 15','iPhone 15 Pro','Pixel 9']},{k:'travel',label:'International roaming needed?',type:'select',opts:['No','Yes — occasional','Yes — frequent']}] },
+    { id:'c7', name:'Meeting room AV setup', cat:'Facilities',      icon:'monitor',desc:'Book a technician to prepare a room for an event.', sla:'Same day', approval:'None', fields:[{k:'room',label:'Room',type:'select',opts:['Ontario — 3F','Superior — 3F','Huron — 2F','Erie — 2F']},{k:'when',label:'Date needed',type:'date'}] },
+    { id:'c8', name:'Guest Wi-Fi voucher',   cat:'Network',         icon:'zap',    desc:'Time-limited network access for visitors.', sla:'2 hours', approval:'None', fields:[{k:'guest',label:'Guest or company name',type:'text'},{k:'days',label:'How many days?',type:'select',opts:['1','3','7','30']}] }
+  ],
+  changes: [
+    { id:'CHG-0311', title:'Firmware upgrade — Toronto core switches', risk:'High',   state:'Awaiting approval', type:'Normal',   owner:'a3', window:ahead(52), dur:'4h', impact:'Toronto HQ, all floors', approvals:[{by:'a1',status:'Approved'},{by:'a6',status:'Pending'}], plan:'Upgrade C9300 pair to IOS-XE 17.12 in sequence, failover verified between units.', backout:'Roll back to 17.9 image held on flash; 20 minute restore per unit.' },
+    { id:'CHG-0309', title:'Quarterly patch cycle — Windows fleet',    risk:'Medium', state:'Scheduled',         type:'Standard', owner:'a4', window:ahead(96), dur:'6h', impact:'412 Windows endpoints', approvals:[{by:'a1',status:'Approved'}], plan:'Staged ring deployment: pilot 20, broad 150, remainder.', backout:'Pause ring and uninstall offending KB via Intune.' },
+    { id:'CHG-0306', title:'NetSuite sandbox refresh',                 risk:'Low',    state:'In progress',       type:'Normal',   owner:'a6', window:ago(2),   dur:'8h', impact:'Finance sandbox users', approvals:[{by:'a1',status:'Approved'},{by:'a6',status:'Approved'}], plan:'Refresh sandbox from production copy, re-apply integration keys.', backout:'Restore prior sandbox snapshot.' },
+    { id:'CHG-0298', title:'Decommission legacy file server FS-03',    risk:'High',   state:'Completed',         type:'Normal',   owner:'a3', window:ago(120), dur:'3h', impact:'Legacy shares, Operations', approvals:[{by:'a1',status:'Approved'}], plan:'Migrate remaining shares to SharePoint, power down after 14 day quiet period.', backout:'Power on and re-share; data retained for 30 days.' },
+    { id:'CHG-0295', title:'Enable conditional access for contractors',risk:'Medium', state:'Rejected',          type:'Normal',   owner:'a5', window:ago(200), dur:'2h', impact:'87 contractor accounts', approvals:[{by:'a1',status:'Rejected'}], plan:'Apply device compliance policy to contractor group.', backout:'Remove policy assignment.' }
+  ],
+  problems: [
+    { id:'PRB-0044', title:'Intermittent VPN drops for Montréal users', status:'Root cause identified', priority:'High',   owner:'a3', linked:3, opened:ago(96),  cause:'MTU mismatch on the new ISP link fragments UDP 443 under load.', workaround:'Force TCP fallback in the client profile for Montréal.' },
+    { id:'PRB-0041', title:'Outlook search index rebuilds after reboot', status:'Under investigation', priority:'Medium', owner:'a4', linked:6, opened:ago(240), cause:'—', workaround:'Rebuild index overnight; users advised to leave laptops powered on.' },
+    { id:'PRB-0038', title:'Badge printer jams on batch runs',           status:'Resolved',            priority:'Low',    owner:'a4', linked:2, opened:ago(600), cause:'Third-party card stock outside tolerance.', workaround:'Use approved stock only; supplier switched.' }
+  ],
+  announcements: [
+    { id:'an1', title:'Planned VPN maintenance — Saturday 02:00–06:00 ET', body:'The Toronto VPN gateway will be upgraded. Remote access will be unavailable during the window. Montréal users should connect to the Amsterdam gateway if needed.', by:'a3', at:ago(5), level:'warn' },
+    { id:'an2', title:'Phishing campaign targeting payroll', body:'Several employees have received messages asking them to confirm banking details for direct deposit. Payroll will never ask for this by email. Use the Report Phish button.', by:'a5', at:ago(28), level:'alert' },
+    { id:'an3', title:'New self-service password reset is live', body:'You can now reset your own password without contacting the Service Desk. It takes about a minute and works from any device.', by:'a1', at:ago(70), level:'info' }
+  ],
+  slas: [
+    { id:'s1', name:'Priority 1 — Urgent',  fr:'15 minutes', res:'4 hours',  hours:'24×7',           esc:'Notify Service Desk Lead at 50%', active:true },
+    { id:'s2', name:'Priority 2 — High',    fr:'1 hour',     res:'8 hours',  hours:'Business hours', esc:'Notify group supervisor at 75%', active:true },
+    { id:'s3', name:'Priority 3 — Medium',  fr:'4 hours',    res:'2 days',   hours:'Business hours', esc:'Notify assignee at 90%', active:true },
+    { id:'s4', name:'Priority 4 — Low',     fr:'8 hours',    res:'5 days',   hours:'Business hours', esc:'None', active:true },
+    { id:'s5', name:'VIP override',         fr:'10 minutes', res:'2 hours',  hours:'24×7',           esc:'Page on-call immediately', active:false }
+  ],
+  hours: [
+    { id:'bh1', name:'Canada business hours', tz:'America/Toronto', days:'Mon–Fri', time:'08:00 – 18:00', holidays:'Canadian statutory' },
+    { id:'bh2', name:'Follow the sun',        tz:'UTC',             days:'Mon–Sun', time:'00:00 – 24:00', holidays:'None' }
+  ],
+  automations: [
+    { id:'r1', name:'Route password resets to Identity & Access', when:'Ticket is created', cond:'Subject contains "password"', then:'Assign to Identity & Access, set priority Medium', runs:1842, active:true },
+    { id:'r2', name:'Escalate urgent tickets at 50% SLA',         when:'Time is reached',    cond:'Priority is Urgent and 50% of resolution SLA elapsed', then:'Email Service Desk Lead, add tag escalated', runs:96, active:true },
+    { id:'r3', name:'Auto-close resolved tickets after 5 days',   when:'Time is reached',    cond:'Status is Resolved for 5 days', then:'Set status Closed, send satisfaction survey', runs:3120, active:true },
+    { id:'r4', name:'Flag VIP requesters',                        when:'Ticket is created',  cond:'Requester is in group Executive', then:'Apply VIP override SLA, notify on-call', runs:41, active:false },
+    { id:'r5', name:'Nudge pending tickets',                      when:'Time is reached',    cond:'Status is Pending for 3 days with no reply', then:'Email requester a reminder', runs:508, active:true }
+  ],
+  fields: [
+    { id:'f1', label:'Category',      type:'Dropdown',  required:true,  agents:true,  portal:true },
+    { id:'f2', label:'Subcategory',   type:'Dropdown',  required:false, agents:true,  portal:true },
+    { id:'f3', label:'Impacted site', type:'Dropdown',  required:false, agents:true,  portal:true },
+    { id:'f4', label:'Cost centre',   type:'Text',      required:false, agents:true,  portal:false },
+    { id:'f5', label:'Affected asset',type:'Lookup',    required:false, agents:true,  portal:true },
+    { id:'f6', label:'Root cause',    type:'Paragraph', required:false, agents:true,  portal:false }
+  ],
+  templates: [
+    { id:'t1', name:'Ticket received',      trigger:'Ticket created',   to:'Requester', subject:'We have your request — {{ticket.id}}' },
+    { id:'t2', name:'Agent replied',        trigger:'Public reply sent',to:'Requester', subject:'Update on {{ticket.id}}' },
+    { id:'t3', name:'Resolution confirmed', trigger:'Status → Resolved',to:'Requester', subject:'{{ticket.id}} is resolved — how did we do?' },
+    { id:'t4', name:'Assignment notice',    trigger:'Ticket assigned',  to:'Agent',     subject:'{{ticket.id}} assigned to you' },
+    { id:'t5', name:'SLA breach warning',   trigger:'80% of SLA',       to:'Group',     subject:'SLA warning — {{ticket.id}}' }
+  ],
+  canned: [
+    { id:'cr1', title:'Asking for more detail', body:'Thanks for getting in touch. So I can pin this down, could you tell me:\n\n1. What you were doing when it happened\n2. The exact error text, or a screenshot\n3. Whether it happens on other networks\n\nI will pick this straight back up once I hear from you.' },
+    { id:'cr2', title:'Password reset done',    body:'Your password has been reset. You will be asked to set a new one at your next sign-in, and it applies to email, VPN, and every app behind single sign-on.\n\nIf the prompt does not appear within five minutes, reply here and I will re-check the enrolment.' },
+    { id:'cr3', title:'Waiting on a vendor',    body:'I have raised this with the vendor and have a case open with them. I will keep this ticket open and update you as soon as they come back — usually within one business day.' },
+    { id:'cr4', title:'Closing after resolution',body:'Glad that sorted it. I am marking this resolved, but replying to this message reopens it within five days if anything comes back.' }
+  ],
+  activity: []
+};
+
+/* ---------- ticket construction ---------- */
+let SEQ = { INC: 2100, SR: 4400 };
+function nextId(kind){ SEQ[kind] += 1; return kind + '-' + SEQ[kind]; }
+
+function mkTicket(o){
+  const created = o.created;
+  const t = {
+    id: o.id, subject: o.subject, requester: o.requester, agent: o.agent || null,
+    group: o.group, status: o.status, priority: o.priority, type: o.type,
+    category: o.category, source: o.source, site: DB.users.find(u=>u.id===o.requester)?.site || '—',
+    created, updated: o.updated || created,
+    frDue: o.frDue, resDue: o.resDue, respondedAt: o.respondedAt || null,
+    resolvedAt: o.resolvedAt || null,
+    tags: o.tags || [], assets: o.assets || [], tasks: o.tasks || [],
+    csat: o.csat || null, escalated: !!o.escalated,
+    conv: [{ kind:'description', by:o.requester, at:created, body:o.body, atts:o.atts||[] }].concat(o.conv||[])
+  };
+  return t;
+}
+
+DB.tickets = [
+  mkTicket({ id:'INC-2098', subject:'Cannot connect to VPN from home — error 812', requester:'u2', agent:'a3', group:'g2',
+    status:'Open', priority:'High', type:'Incident', category:'Network', source:'Portal', created:ago(5.2), frDue:ago(4.2), resDue:ahead(1.1),
+    respondedAt:ago(4.6), tags:['vpn','montreal'], assets:['AST-0741'], escalated:true,
+    body:'Since yesterday afternoon I get error 812 every time I try to connect from home. It works fine when I am in the Montréal office. I have restarted twice and reinstalled the client.',
+    tasks:[{t:'Check certificate expiry',done:true,who:'a3'},{t:'Verify MTU on new ISP link',done:false,who:'a3'}],
+    conv:[
+      { kind:'reply', by:'a3', at:ago(4.6), body:'Thanks Camille — error 812 usually means the client certificate has expired. I am checking your enrolment record now. In the meantime, are you on the 5GHz band at home, and does it fail on a phone hotspot too?' },
+      { kind:'reply', by:'u2', at:ago(3.9), body:'Same failure on my phone hotspot. 5GHz at home. Two colleagues here in Montréal are seeing it as well.' },
+      { kind:'note',  by:'a3', at:ago(3.4), body:'Third Montréal report today. Fragmentation on the new ISP link is the likely cause — linking to PRB-0044 rather than treating these as isolated.' }
+    ]}),
+  mkTicket({ id:'INC-2097', subject:'Payroll system rejecting my sign-in after password change', requester:'u1', agent:'a5', group:'g4',
+    status:'Pending', priority:'Medium', type:'Incident', category:'Access', source:'Email', created:ago(9), frDue:ago(5), resDue:ahead(20),
+    respondedAt:ago(7.5), tags:['sso','workday'], assets:['AST-0912'],
+    body:'I reset my password this morning using the new self-service page. Everything else works but Workday keeps saying my credentials are invalid.',
+    conv:[
+      { kind:'reply', by:'a5', at:ago(7.5), body:'Hi Jordan — Workday caches credentials separately for about 30 minutes after a reset. Could you sign out fully, close the browser, and try again? If it still fails I will force a directory sync.' },
+      { kind:'reply', by:'u1', at:ago(6.2), body:'Tried that, still no luck. I need to approve timesheets before Friday.' },
+      { kind:'note',  by:'a5', at:ago(6.0), body:'Forced sync queued. Waiting on the next Workday connector run at the top of the hour.' }
+    ]}),
+  mkTicket({ id:'INC-2096', subject:'Floor 2 printer jams on every job', requester:'u5', agent:'a4', group:'g3',
+    status:'Open', priority:'Low', type:'Incident', category:'Printing', source:'Phone', created:ago(26), frDue:ago(18), resDue:ahead(62),
+    respondedAt:ago(22), tags:['printing','mississauga'], assets:['AST-0620'],
+    body:'The printer outside the warehouse office jams on every job, even single pages. Paper tray 2. We are printing shipping labels by hand at the moment.',
+    tasks:[{t:'Order fuser replacement',done:true,who:'a4'},{t:'Schedule engineer visit',done:false,who:'a4'}],
+    conv:[{ kind:'reply', by:'a4', at:ago(22), body:'A replacement fuser is on order and should arrive Thursday. Until then, floor 3 has an identical printer queue if you need labels urgently.' }]}),
+  mkTicket({ id:'SR-4382', subject:'New laptop for incoming analyst — starts Monday', requester:'u6', agent:'a4', group:'g3',
+    status:'Open', priority:'Medium', type:'Service request', category:'Hardware', source:'Portal', created:ago(30), frDue:ago(26), resDue:ahead(40),
+    respondedAt:ago(27), tags:['onboarding'],
+    body:'New starter in Finance begins Monday. Standard spec is fine. Please ship to Toronto HQ, floor 3 reception.',
+    tasks:[{t:'Image laptop',done:true,who:'a4'},{t:'Create directory account',done:true,who:'a5'},{t:'Assign app profile',done:false,who:'a5'}],
+    conv:[{ kind:'reply', by:'a4', at:ago(27), body:'Booked in. The machine is imaged and I will have it at floor 3 reception by Friday afternoon with a dock and monitor.' }]}),
+  mkTicket({ id:'INC-2095', subject:'Salesforce dashboards timing out', requester:'u3', agent:'a6', group:'g5',
+    status:'Open', priority:'Urgent', type:'Incident', category:'Software', source:'Chat', created:ago(1.6), frDue:ago(1.35), resDue:ahead(2.4),
+    respondedAt:ago(1.3), tags:['salesforce','reporting'], escalated:true,
+    body:'Every pipeline dashboard times out after about 30 seconds. The whole sales team is affected and we have a board review at 4pm.',
+    conv:[
+      { kind:'reply', by:'a6', at:ago(1.3), body:'On it. I can reproduce the timeout on the pipeline dashboards and have opened a severity 2 case with Salesforce. Reports built on the accounts object still load, so use those for the board review if we run short of time.' },
+      { kind:'note',  by:'a1', at:ago(1.0), body:'Vendor case escalated. Board review at 16:00 — keep updates flowing every 30 minutes.' }
+    ]}),
+  mkTicket({ id:'SR-4381', subject:'Figma licence for the brand team', requester:'u2', agent:null, group:'g5',
+    status:'New', priority:'Low', type:'Service request', category:'Software', source:'Portal', created:ago(3.1), frDue:ahead(4.9), resDue:ahead(116),
+    tags:['licence'],
+    body:'Three of us need Figma seats for the rebrand work. Cost centre MKT-204.' }),
+  mkTicket({ id:'INC-2094', subject:'Meeting room Ontario has no display', requester:'u7', agent:null, group:'g1',
+    status:'New', priority:'Medium', type:'Incident', category:'Hardware', source:'Walk-up', created:ago(0.7), frDue:ahead(3.3), resDue:ahead(47),
+    tags:['av','rooms'],
+    body:'The screen in Ontario on floor 3 stays black no matter which cable I use. I have a client call in there at 2pm.' }),
+  mkTicket({ id:'INC-2093', subject:'Suspicious email asking to confirm banking details', requester:'u1', agent:'a5', group:'g4',
+    status:'Resolved', priority:'High', type:'Incident', category:'Security', source:'Email', created:ago(48), frDue:ago(47), resDue:ago(40),
+    respondedAt:ago(47.4), resolvedAt:ago(41), tags:['phishing','security'], csat:{ score:5, comment:'Answered within minutes and explained exactly what to look for.' },
+    body:'I received an email that looks like it is from Payroll asking me to confirm my direct deposit details. I have not clicked anything.',
+    conv:[
+      { kind:'reply', by:'a5', at:ago(47.4), body:'You did exactly the right thing. That message is a phishing attempt — Payroll never asks for banking details by email. I have blocked the sender across the tenant and pulled the message from other inboxes.' },
+      { kind:'system', by:'a5', at:ago(41), body:'Status changed to Resolved' }
+    ]}),
+  mkTicket({ id:'SR-4379', subject:'Guest Wi-Fi for the auditors — 3 days', requester:'u1', agent:'a2', group:'g1',
+    status:'Resolved', priority:'Low', type:'Service request', category:'Network', source:'Portal', created:ago(72), frDue:ago(70), resDue:ago(60),
+    respondedAt:ago(71), resolvedAt:ago(66), tags:['guest-wifi'], csat:{ score:4, comment:'Quick, though I had to chase for the second voucher.' },
+    body:'Four external auditors are on site Tuesday to Thursday and need network access.',
+    conv:[{ kind:'reply', by:'a2', at:ago(71), body:'Four vouchers created and emailed to you, valid Tuesday 08:00 through Thursday 20:00.' }]}),
+  mkTicket({ id:'INC-2092', subject:'Laptop battery drains in under two hours', requester:'u4', agent:'a4', group:'g3',
+    status:'Pending', priority:'Medium', type:'Incident', category:'Hardware', source:'Portal', created:ago(120), frDue:ago(116), resDue:ahead(8),
+    respondedAt:ago(117), tags:['hardware'], assets:['AST-0455'],
+    body:'Battery went from all-day to about 100 minutes over the past few weeks. Cycle count is 847 according to system report.',
+    conv:[{ kind:'reply', by:'a4', at:ago(117), body:'847 cycles is past the service threshold, so this is covered under warranty. I have raised it with the vendor — can you confirm which day next week suits for the swap?' }]}),
+  mkTicket({ id:'INC-2091', subject:'Shared drive missing after file server move', requester:'u5', agent:'a3', group:'g2',
+    status:'Closed', priority:'High', type:'Incident', category:'Access', source:'Phone', created:ago(200), frDue:ago(199), resDue:ago(192),
+    respondedAt:ago(199.2), resolvedAt:ago(194), tags:['storage'], csat:{ score:5, comment:'' },
+    body:'The Operations shared drive letter disappeared this morning. Nobody in the warehouse office can reach the manifests.',
+    conv:[{ kind:'reply', by:'a3', at:ago(199.2), body:'That share moved to SharePoint during the FS-03 decommission. I have pushed a shortcut to your team and pinned the new location — the old drive letter will not come back.' }]}),
+  mkTicket({ id:'SR-4378', subject:'Second monitor for home office', requester:'u3', agent:'a2', group:'g1',
+    status:'Closed', priority:'Low', type:'Service request', category:'Hardware', source:'Portal', created:ago(320), frDue:ago(316), resDue:ago(280),
+    respondedAt:ago(317), resolvedAt:ago(300), tags:['hardware','remote'], csat:{ score:3, comment:'Took longer than the stated three days.' },
+    body:'Working remote full time and could use a second screen for pipeline reviews.' }),
+  mkTicket({ id:'INC-2090', subject:'Outlook search returns nothing after restart', requester:'u7', agent:'a4', group:'g3',
+    status:'Open', priority:'Medium', type:'Incident', category:'Software', source:'Email', created:ago(50), frDue:ago(46), resDue:ahead(-2),
+    respondedAt:ago(47), tags:['outlook'],
+    body:'Every time I restart my laptop, Outlook search comes back empty until the afternoon. It has been happening for two weeks.',
+    conv:[{ kind:'reply', by:'a4', at:ago(47), body:'This matches a known problem we are tracking as PRB-0041 — the search index rebuilds on boot. Leaving the laptop powered on overnight avoids it while we work on a permanent fix.' }]}),
+  mkTicket({ id:'SR-4377', subject:'Access to Snowflake — read only', requester:'u4', agent:'a5', group:'g4',
+    status:'Pending', priority:'Low', type:'Service request', category:'Access', source:'Portal', created:ago(60), frDue:ago(56), resDue:ahead(30),
+    respondedAt:ago(58), tags:['access','data'],
+    body:'Need read access to the analytics warehouse for a capacity model. Manager has approved by email.',
+    conv:[{ kind:'reply', by:'a5', at:ago(58), body:'Approval received. Waiting on the data owner to confirm which schemas you should see — I have nudged them today.' }]}),
+  mkTicket({ id:'INC-2089', subject:'Badge reader at loading dock offline', requester:'u8', agent:null, group:'g1',
+    status:'New', priority:'High', type:'Incident', category:'Facilities', source:'Phone', created:ago(0.35), frDue:ahead(0.65), resDue:ahead(7.6),
+    tags:['access','mississauga'],
+    body:'The badge reader at the loading dock is dead — no lights. Drivers are being let in manually which we should not be doing.' }),
+  mkTicket({ id:'INC-2088', subject:'Teams audio cuts out in large meetings', requester:'u6', agent:'a2', group:'g1',
+    status:'Open', priority:'Low', type:'Incident', category:'Software', source:'Chat', created:ago(80), frDue:ago(74), resDue:ahead(36),
+    respondedAt:ago(76), tags:['teams'],
+    body:'In meetings over about 30 people my audio drops every few minutes. Fine in small calls.',
+    conv:[{ kind:'reply', by:'a2', at:ago(76), body:'Could you run the network report from Teams during the next large meeting and attach it here? That will show whether packets are being dropped upstream or locally.' }]})
+];
+
+/* ---------- app state ---------- */
+const STATE = {
+  mode: 'agent',                 // 'agent' | 'portal'
+  route: { view:'dashboard', id:null },
+  me: 'a1',                      // signed-in agent
+  requester: 'u1',               // signed-in employee for the portal
+  filters: { q:'', status:'', priority:'', agent:'', group:'', type:'', sort:'sla' },
+  savedView: 'all',
+  selection: new Set(),
+  composerTab: 'reply',
+  adminTab: 'agents',
+  kbCat: 'All',
+  catalogCat: 'All',
+  portalTab: 'open'
+};
+
+/* ---------- lookups ---------- */
+const byId = (arr,id) => arr.find(x => x.id === id);
+const agent   = id => byId(DB.agents,id);
+const user    = id => byId(DB.users,id);
+const person  = id => agent(id) || user(id) || { id, name:'Unknown', color:'ink' };
+const group   = id => byId(DB.groups,id);
+const ticket  = id => byId(DB.tickets,id);
+const asset   = id => byId(DB.assets,id);
+const article = id => byId(DB.articles,id);
+
+/* ---------- formatting ---------- */
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const pad = n => String(n).padStart(2,'0');
+function esc(s=''){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtDate(d){ return `${d.getDate()} ${MONTHS[d.getMonth()]}, ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function fmtDay(d){ return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; }
+function durLabel(ms){
+  const s = Math.abs(ms)/1000, m = Math.floor(s/60), h = Math.floor(m/60), d = Math.floor(h/24);
+  if (d >= 1) return `${d}d ${h%24}h`;
+  if (h >= 1) return `${h}h ${m%60}m`;
+  return `${Math.max(m,0)}m`;
+}
+function relTime(d){
+  const diff = Date.now() - d.getTime();
+  if (diff < 0) return 'in ' + durLabel(diff);
+  if (diff < 60000) return 'just now';
+  return durLabel(diff) + ' ago';
+}
+function initials(name){ return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+
+const AV = {
+  brand:'bg-brand-50 text-brand border-brand-100',
+  ink:'bg-[#E8EAEF] text-ink-500 border-[#D8DCE4]',
+  violet:'bg-violet-50 text-violet border-[#DCD8F0]',
+  signal:'bg-signal-50 text-signal border-signal-100',
+  alert:'bg-alert-50 text-alert border-alert-100'
+};
+function avatar(id, size=28, cls=''){
+  const p = person(id);
+  const s = size <= 24 ? 'text-[10px]' : size <= 30 ? 'text-[11px]' : 'text-[13px]';
+  return `<span class="inline-flex items-center justify-center rounded-full border font-semibold ${s} ${AV[p.color]||AV.ink} ${cls}"
+    style="width:${size}px;height:${size}px" title="${esc(p.name)}">${initials(p.name)}</span>`;
+}
+
+/* ---------- ticket semantics ---------- */
+const PRIORITY = {
+  Urgent:{ dot:'bg-alert',    text:'text-alert',    bg:'bg-alert-50',   rank:0 },
+  High:  { dot:'bg-signal',   text:'text-signal',   bg:'bg-signal-50',  rank:1 },
+  Medium:{ dot:'bg-[#4C6EF5]',text:'text-[#3B5BDB]',bg:'bg-[#EDF2FF]',  rank:2 },
+  Low:   { dot:'bg-[#98A1B0]',text:'text-muted',    bg:'bg-[#EFF1F5]',  rank:3 }
+};
+const STATUS = {
+  New:     { cls:'bg-ink text-white border-ink' },
+  Open:    { cls:'bg-signal-50 text-signal border-signal-100' },
+  Pending: { cls:'bg-violet-50 text-violet border-[#DCD8F0]' },
+  Resolved:{ cls:'bg-brand-50 text-brand border-brand-100' },
+  Closed:  { cls:'bg-[#EFF1F5] text-muted border-line' }
+};
+const OPEN_STATES = ['New','Open','Pending'];
+const isOpen = t => OPEN_STATES.includes(t.status);
+
+function sla(t){
+  const done = !isOpen(t);
+  const total = t.resDue - t.created;
+  const elapsed = (done ? (t.resolvedAt||t.resDue) : new Date()) - t.created;
+  const pct = Math.max(0, Math.min(100, (elapsed/total)*100));
+  const remaining = t.resDue - Date.now();
+  let state = 'ok';
+  if (done) state = (t.resolvedAt && t.resolvedAt <= t.resDue) ? 'met' : 'missed';
+  else if (remaining <= 0) state = 'breached';
+  else if (pct >= 75) state = 'warn';
+  return { pct, remaining, state, done };
+}
+const SLA_COLOR = { ok:'#0E7C6B', warn:'#B8760B', breached:'#BC332D', met:'#0E7C6B', missed:'#BC332D' };
+function slaLabel(t){
+  const s = sla(t);
+  if (s.done) return s.state === 'met' ? 'Met' : 'Missed';
+  return (s.remaining <= 0 ? 'Over by ' : '') + durLabel(s.remaining);
+}
+function statusChip(s){
+  return `<span class="inline-flex items-center h-[22px] px-2 rounded-md border text-[11px] font-semibold tracking-wide ${STATUS[s].cls}">${s}</span>`;
+}
+function priorityTag(p){
+  const c = PRIORITY[p];
+  return `<span class="inline-flex items-center gap-1.5 text-[12px] font-medium ${c.text}"><i class="led ${c.dot}"></i>${p}</span>`;
+}
+function tagPill(t){
+  return `<span class="inline-flex items-center h-[20px] px-1.5 rounded bg-[#EFF1F5] text-[11px] text-muted font-mono">${esc(t)}</span>`;
+}
+
+/* ---------- mutations ---------- */
+function logActivity(text, tid){
+  DB.activity.unshift({ at:new Date(), text, tid, by:STATE.mode==='agent'?STATE.me:STATE.requester });
+  if (DB.activity.length > 40) DB.activity.pop();
+}
+function addSystemNote(t, body){
+  t.conv.push({ kind:'system', by: STATE.mode==='agent'?STATE.me:STATE.requester, at:new Date(), body });
+  t.updated = new Date();
+}
+/* ============================================================
+   Shell
+   ============================================================ */
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+function go(view, id){
+  STATE.route = { view, id: id || null };
+  STATE.selection.clear();
+  location.hash = '#/' + STATE.mode + '/' + view + (id ? '/' + id : '');
+  render();
+  const v = $('#view'); if (v) v.scrollTop = 0;
+}
+function switchMode(mode){
+  STATE.mode = mode;
+  go(mode === 'agent' ? 'dashboard' : 'home');
+}
+
+const NAV = [
+  { view:'dashboard', label:'Dashboard', icon:'grid' },
+  { view:'tickets',   label:'Tickets',   icon:'inbox',  count: () => DB.tickets.filter(isOpen).length },
+  { view:'problems',  label:'Problems',  icon:'warn' },
+  { view:'changes',   label:'Changes',   icon:'branch', count: () => DB.changes.filter(c=>c.state==='Awaiting approval').length },
+  { view:'assets',    label:'Assets',    icon:'server' },
+  { view:'catalog',   label:'Service catalog', icon:'layers' },
+  { view:'kb',        label:'Knowledge',  icon:'book' },
+  { view:'reports',   label:'Reports',   icon:'chart' },
+  { view:'admin',     label:'Admin',     icon:'cog' }
+];
+
+function sidebar(){
+  const cur = STATE.route.view;
+  const items = NAV.map(n => {
+    const on = cur === n.view || (n.view==='tickets' && cur==='ticket') || (n.view==='kb' && cur==='article');
+    const c = n.count ? n.count() : null;
+    return `<button data-nav="${n.view}" class="group relative w-full flex items-center gap-2.5 h-9 px-2.5 rounded-lg text-[13px] font-medium transition
+      ${on ? 'bg-white/[.09] text-white' : 'text-[#9AA3B4] hover:text-white hover:bg-white/[.05]'}">
+      <span class="${on?'text-brand-100':'text-[#6C7688] group-hover:text-[#9AA3B4]'}">${icon(n.icon,'w-[17px] h-[17px]')}</span>
+      <span class="flex-1 text-left">${n.label}</span>
+      ${c ? `<span class="font-mono text-[11px] ${on?'text-white':'text-[#6C7688]'}">${c}</span>` : ''}
+      ${on ? '<i class="absolute -left-2.5 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r bg-brand-100"></i>' : ''}
+    </button>`;
+  }).join('');
+  const me = agent(STATE.me);
+  return `<aside id="sidebar" class="sidebar fixed lg:static z-40 inset-y-0 left-0 w-[218px] bg-ink flex flex-col shrink-0 -translate-x-full lg:translate-x-0 transition-transform">
+    <div class="h-14 flex items-center gap-2.5 px-4 border-b border-white/[.07]">
+      <span class="w-7 h-7 rounded-md bg-brand grid place-items-center font-display font-bold text-[13px] text-white">NG</span>
+      <div class="leading-none">
+        <div class="font-display font-semibold text-[13px] text-white">TicketHub</div>
+        <div class="text-[10px] tracking-[.14em] text-[#6C7688] uppercase mt-[3px]">Service desk</div>
+      </div>
+      <button data-action="closeNav" class="lg:hidden ml-auto text-[#6C7688] hover:text-white">${icon('x')}</button>
+    </div>
+    <nav class="flex-1 overflow-y-auto p-2.5 space-y-0.5 relative">${items}</nav>
+    <div class="p-2.5 border-t border-white/[.07]">
+      <button data-action="userMenu" class="w-full flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-white/[.05] text-left">
+        ${avatar(STATE.me,30)}
+        <span class="min-w-0 flex-1">
+          <span class="block text-[12.5px] font-medium text-white truncate">${me.name}</span>
+          <span class="block text-[11px] text-[#6C7688] truncate">${me.role}</span>
+        </span>
+        <span class="text-[#6C7688]">${icon('down','w-3.5 h-3.5')}</span>
+      </button>
+    </div>
+  </aside>`;
+}
+
+function topbar(){
+  const overdue = DB.tickets.filter(t => isOpen(t) && sla(t).remaining <= 0).length;
+  return `<header class="h-14 bg-white border-b border-line flex items-center gap-3 px-4 shrink-0">
+    <button data-action="openNav" class="lg:hidden text-muted">${icon('grid','w-5 h-5')}</button>
+    <button data-action="palette" class="group flex items-center gap-2 h-9 w-full max-w-[340px] px-3 rounded-lg border border-line bg-canvas hover:bg-white hover:border-[#CBD1DC] transition text-left">
+      <span class="text-faint">${icon('search','w-4 h-4')}</span>
+      <span class="text-[13px] text-faint flex-1">Search tickets, people, assets…</span>
+      <kbd class="font-mono text-[10px] text-faint border border-line bg-white rounded px-1.5 py-0.5">⌘K</kbd>
+    </button>
+    <div class="flex-1"></div>
+    ${overdue ? `<button data-action="viewOverdue" class="hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-alert-50 border border-alert-100 text-alert text-[12px] font-semibold">
+      ${icon('warn','w-3.5 h-3.5')} ${overdue} past due</button>` : ''}
+    <button data-action="newTicket" class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-brand hover:bg-brand-600 text-white text-[13px] font-semibold transition">
+      ${icon('plus','w-4 h-4')} <span class="hidden sm:inline">New ticket</span></button>
+    <button data-action="notifications" class="relative w-9 h-9 grid place-items-center rounded-lg text-muted hover:bg-canvas" aria-label="Notifications">
+      ${icon('bell','w-[18px] h-[18px]')}<i class="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-alert"></i></button>
+    <button data-action="userMenu" class="lg:hidden">${avatar(STATE.me,30)}</button>
+  </header>`;
+}
+
+function pageHead(title, sub, right=''){
+  return `<div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+    <div>
+      <h1 class="font-display text-[22px] font-semibold text-ink">${title}</h1>
+      ${sub ? `<p class="text-[13px] text-muted mt-1">${sub}</p>` : ''}
+    </div>
+    <div class="flex items-center gap-2">${right}</div>
+  </div>`;
+}
+function card(inner, cls=''){
+  return `<section class="bg-white border border-line rounded-xl shadow-card ${cls}">${inner}</section>`;
+}
+function cardHead(title, right=''){
+  return `<div class="flex items-center justify-between gap-3 px-4 h-12 border-b border-line">
+    <h2 class="font-display text-[14px] font-semibold text-ink">${title}</h2>
+    <div class="flex items-center gap-2 text-[12px]">${right}</div></div>`;
+}
+function btn(label, action, kind='ghost', ic=''){
+  const styles = {
+    solid:'bg-ink text-white hover:bg-ink-700 border-ink',
+    brand:'bg-brand text-white hover:bg-brand-600 border-brand',
+    ghost:'bg-white text-ink-500 hover:bg-canvas border-line',
+    danger:'bg-white text-alert hover:bg-alert-50 border-alert-100'
+  };
+  return `<button data-action="${action}" class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-[12.5px] font-medium transition ${styles[kind]}">${ic?icon(ic,'w-3.5 h-3.5'):''}${label}</button>`;
+}
+function emptyState(ic, title, body, action=''){
+  return `<div class="py-16 px-6 text-center">
+    <div class="w-11 h-11 mx-auto rounded-xl bg-canvas border border-line grid place-items-center text-faint">${icon(ic,'w-5 h-5')}</div>
+    <h3 class="font-display text-[15px] font-semibold mt-3">${title}</h3>
+    <p class="text-[13px] text-muted mt-1 max-w-sm mx-auto">${body}</p>
+    ${action ? `<div class="mt-4">${action}</div>` : ''}</div>`;
+}
+
+/* ============================================================
+   Agent — dashboard
+   ============================================================ */
+function kpi(label, value, sub, tone='ink', action=''){
+  const tones = { ink:'text-ink', alert:'text-alert', signal:'text-signal', brand:'text-brand' };
+  return `<button ${action?`data-action="${action}"`:''} class="text-left bg-white border border-line rounded-xl shadow-card p-3.5 hover:border-[#CBD1DC] transition">
+    <div class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint">${label}</div>
+    <div class="font-mono text-[26px] leading-none mt-2.5 ${tones[tone]} tick">${value}</div>
+    <div class="text-[11.5px] text-muted mt-2">${sub}</div>
+  </button>`;
+}
+
+/* Signature: breach horizon — every open ticket placed on a 12-hour runway */
+function breachHorizon(){
+  const open = DB.tickets.filter(isOpen);
+  const late = open.filter(t => sla(t).remaining <= 0).sort((a,b)=>a.resDue-b.resDue);
+  const soon = open.filter(t => { const r = sla(t).remaining; return r > 0 && r <= 12*H; }).sort((a,b)=>a.resDue-b.resDue);
+  const beyond = open.length - late.length - soon.length;
+
+  const marks = [0,3,6,9,12].map(h => `<div class="absolute top-0 bottom-0 border-l border-line" style="left:${(h/12)*100}%">
+      <span class="absolute -top-[18px] -translate-x-1/2 font-mono text-[10px] text-faint">${h===0?'now':'+'+h+'h'}</span></div>`).join('');
+
+  const pips = soon.map(t => {
+    const r = sla(t).remaining / H;
+    const left = Math.min(98, (r/12)*100);
+    const p = PRIORITY[t.priority];
+    return `<button data-open="${t.id}" title="${esc(t.id)} · ${esc(t.subject)} · due in ${durLabel(sla(t).remaining)}"
+      class="absolute -translate-x-1/2 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full ${p.dot} ring-[3px] ring-white hover:scale-150 transition" style="left:${left}%"></button>`;
+  }).join('');
+
+  const lateList = late.slice(0,4).map(t => `<button data-open="${t.id}" class="flex items-center gap-2 w-full text-left group">
+      <i class="led ${PRIORITY[t.priority].dot}"></i>
+      <span class="font-mono text-[11px] text-alert">${t.id}</span>
+      <span class="text-[12px] text-ink-500 truncate flex-1 group-hover:underline">${esc(t.subject)}</span>
+      <span class="font-mono text-[11px] text-alert tick">+${durLabel(sla(t).remaining)}</span>
+    </button>`).join('');
+
+  return card(`
+    ${cardHead('Breach horizon', `<span class="text-muted">${soon.length} due in 12h · <span class="text-alert font-semibold">${late.length} past due</span> · ${beyond} beyond</span>`)}
+    <div class="p-4 pt-7">
+      <div class="flex gap-3">
+        <div class="w-[86px] shrink-0 rounded-lg stripe border border-alert-100 grid place-items-center h-12">
+          <span class="font-mono text-[15px] text-alert">${late.length}</span>
+        </div>
+        <div class="relative flex-1 h-12 rounded-lg border border-line bg-canvas overflow-visible">${marks}${pips}
+          ${soon.length===0 ? '<span class="absolute inset-0 grid place-items-center text-[12px] text-faint">Nothing due in the next 12 hours</span>' : ''}
+        </div>
+      </div>
+      ${late.length ? `<div class="mt-4 pt-3 border-t border-line space-y-2">${lateList}
+        ${late.length>4 ? `<button data-action="viewOverdue" class="text-[12px] text-brand font-medium hover:underline">See all ${late.length} past due</button>`:''}
+      </div>` : ''}
+    </div>`);
+}
+
+function volumeChart(){
+  const days = ['Thu','Fri','Sat','Sun','Mon','Tue','Wed'];
+  const created  = [18,22,4,3,31,27,24];
+  const resolved = [16,25,6,2,26,29,21];
+  const max = Math.max(...created, ...resolved);
+  const bars = days.map((d,i) => {
+    const hc = (created[i]/max)*100, hr = (resolved[i]/max)*100;
+    return `<div class="flex-1 flex flex-col items-center gap-1.5 group">
+      <div class="w-full flex items-end justify-center gap-[3px] h-[112px]">
+        <div class="w-[9px] rounded-t-[2px] bg-ink-600 group-hover:bg-ink transition-all" style="height:${hc}%" title="${created[i]} created"></div>
+        <div class="w-[9px] rounded-t-[2px] bg-brand-100 group-hover:bg-brand transition-all" style="height:${hr}%" title="${resolved[i]} resolved"></div>
+      </div>
+      <span class="text-[10.5px] text-faint">${d}</span></div>`;
+  }).join('');
+  return card(`${cardHead('Ticket volume', `
+      <span class="flex items-center gap-1.5 text-muted"><i class="w-2 h-2 rounded-sm bg-ink-600"></i>Created</span>
+      <span class="flex items-center gap-1.5 text-muted"><i class="w-2 h-2 rounded-sm bg-brand-100"></i>Resolved</span>`)}
+    <div class="p-4 flex gap-1 items-end">${bars}</div>`);
+}
+
+function workloadCard(){
+  const rows = DB.agents.filter(a=>a.active).map(a => {
+    const open = DB.tickets.filter(t => t.agent===a.id && isOpen(t));
+    const late = open.filter(t => sla(t).remaining <= 0).length;
+    return { a, n:open.length, late };
+  }).sort((x,y)=>y.n-x.n);
+  const max = Math.max(1, ...rows.map(r=>r.n));
+  return card(`${cardHead('Agent workload', `<span class="text-muted">Open by assignee</span>`)}
+    <div class="p-4 space-y-3">${rows.map(r => `
+      <div class="flex items-center gap-3">
+        ${avatar(r.a.id,26)}
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[12.5px] font-medium text-ink truncate">${r.a.name}</span>
+            <span class="font-mono text-[11.5px] text-muted tick">${r.n}${r.late?`<span class="text-alert"> · ${r.late} late</span>`:''}</span>
+          </div>
+          <div class="h-1.5 mt-1.5 rounded-full bg-canvas overflow-hidden">
+            <div class="h-full rounded-full ${r.late?'bg-signal':'bg-brand'}" style="width:${(r.n/max)*100}%"></div>
+          </div>
+        </div>
+      </div>`).join('')}</div>`);
+}
+
+function csatCard(){
+  const rated = DB.tickets.filter(t=>t.csat);
+  const avg = rated.length ? (rated.reduce((s,t)=>s+t.csat.score,0)/rated.length) : 0;
+  const dist = [5,4,3,2,1].map(n => ({ n, c: rated.filter(t=>t.csat.score===n).length }));
+  const stars = n => Array.from({length:5},(_,i)=>`<span class="${i<Math.round(n)?'text-signal-400':'text-line'}">${icon('star','w-3.5 h-3.5 fill-current')}</span>`).join('');
+  return card(`${cardHead('Satisfaction', `<span class="text-muted">${rated.length} responses</span>`)}
+    <div class="p-4">
+      <div class="flex items-baseline gap-2"><span class="font-mono text-[28px] text-ink tick">${avg.toFixed(1)}</span><span class="text-[12px] text-muted">/ 5</span></div>
+      <div class="flex gap-0.5 mt-1">${stars(avg)}</div>
+      <div class="mt-4 space-y-1.5">${dist.map(d => `
+        <div class="flex items-center gap-2">
+          <span class="font-mono text-[11px] text-faint w-3">${d.n}</span>
+          <div class="flex-1 h-1.5 rounded-full bg-canvas overflow-hidden"><div class="h-full bg-signal-400 rounded-full" style="width:${rated.length?(d.c/rated.length)*100:0}%"></div></div>
+          <span class="font-mono text-[11px] text-faint w-4 text-right">${d.c}</span>
+        </div>`).join('')}</div>
+    </div>`);
+}
+
+function queueCard(){
+  const mine = DB.tickets.filter(t => t.agent===STATE.me && isOpen(t)).sort((a,b)=>a.resDue-b.resDue);
+  const unassigned = DB.tickets.filter(t => !t.agent && isOpen(t)).sort((a,b)=>a.resDue-b.resDue);
+  const list = (arr, empty) => arr.length ? arr.slice(0,5).map(t => {
+    const s = sla(t);
+    return `<button data-open="${t.id}" class="w-full text-left px-4 py-2.5 row-hover border-b border-line last:border-0 flex items-center gap-3">
+      <i class="led ${PRIORITY[t.priority].dot}"></i>
+      <span class="font-mono text-[11px] text-faint w-[68px] shrink-0">${t.id}</span>
+      <span class="text-[13px] text-ink truncate flex-1">${esc(t.subject)}</span>
+      <span class="font-mono text-[11px] tick shrink-0" style="color:${SLA_COLOR[s.state]}">${slaLabel(t)}</span>
+    </button>`;
+  }).join('') : `<p class="px-4 py-6 text-[13px] text-muted text-center">${empty}</p>`;
+  return card(`${cardHead('My queue', `<button data-action="allTickets" class="text-brand font-medium hover:underline">All tickets</button>`)}
+    <div>${list(mine,'Nothing assigned to you. Take one from the unassigned pool below.')}</div>
+    <div class="px-4 h-9 flex items-center bg-canvas border-y border-line">
+      <span class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint">Unassigned · ${unassigned.length}</span>
+      <button data-action="viewUnassigned" class="ml-auto text-[12px] text-brand font-medium hover:underline">Claim work</button>
+    </div>
+    <div>${list(unassigned,'The pool is empty.')}</div>`);
+}
+
+function announcementsCard(){
+  const tone = { warn:'border-signal-100 bg-signal-50', alert:'border-alert-100 bg-alert-50', info:'border-line bg-canvas' };
+  return card(`${cardHead('Announcements', btn('Post','newAnnouncement','ghost','plus'))}
+    <div class="p-4 space-y-2.5">${DB.announcements.map(a => `
+      <div class="rounded-lg border p-3 ${tone[a.level]}">
+        <div class="text-[13px] font-semibold text-ink">${esc(a.title)}</div>
+        <p class="text-[12.5px] text-muted mt-1 leading-relaxed">${esc(a.body)}</p>
+        <div class="text-[11px] text-faint mt-2">${esc(person(a.by).name)} · ${relTime(a.at)}</div>
+      </div>`).join('')}</div>`);
+}
+
+function viewDashboard(){
+  const open = DB.tickets.filter(isOpen);
+  const unassigned = open.filter(t=>!t.agent).length;
+  const overdue = open.filter(t=>sla(t).remaining<=0).length;
+  const soon = open.filter(t=>{const r=sla(t).remaining;return r>0&&r<=4*H;}).length;
+  const resolvedToday = DB.tickets.filter(t=>t.resolvedAt && (Date.now()-t.resolvedAt) < 24*H).length;
+  const hour = NOW.getHours();
+  const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+
+  return `<div class="p-5 max-w-[1400px] mx-auto fade-in">
+    ${pageHead(`${greet}, ${agent(STATE.me).name.split(' ')[0]}`, `${fmtDay(NOW)} · ${open.length} tickets open across ${DB.groups.length} groups`,
+      btn('Refresh','refresh','ghost','refresh') + btn('New ticket','newTicket','brand','plus'))}
+    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-4">
+      ${kpi('Unassigned', unassigned, 'Waiting for an owner', unassigned?'signal':'ink','viewUnassigned')}
+      ${kpi('Open', open.length, `${DB.tickets.filter(t=>t.status==='New').length} new today`,'ink','allTickets')}
+      ${kpi('Due within 4h', soon, 'Resolution SLA','signal','allTickets')}
+      ${kpi('Past due', overdue, overdue?'Breached resolution SLA':'All within target', overdue?'alert':'brand','viewOverdue')}
+      ${kpi('Resolved 24h', resolvedToday, 'First-contact rate 62%','brand','allTickets')}
+    </div>
+    <div class="mb-4">${breachHorizon()}</div>
+    <div class="grid lg:grid-cols-3 gap-4 mb-4">
+      <div class="lg:col-span-2">${volumeChart()}</div>
+      ${workloadCard()}
+    </div>
+    <div class="grid lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2">${queueCard()}</div>
+      <div class="space-y-4">${csatCard()}${announcementsCard()}</div>
+    </div>
+  </div>`;
+}
+/* ============================================================
+   Agent — ticket list
+   ============================================================ */
+const SAVED_VIEWS = [
+  { id:'all',        label:'All open',   fn:t => isOpen(t) },
+  { id:'mine',       label:'Assigned to me', fn:t => isOpen(t) && t.agent===STATE.me },
+  { id:'unassigned', label:'Unassigned', fn:t => isOpen(t) && !t.agent },
+  { id:'overdue',    label:'Past due',   fn:t => isOpen(t) && sla(t).remaining<=0 },
+  { id:'escalated',  label:'Escalated',  fn:t => isOpen(t) && t.escalated },
+  { id:'closed',     label:'Resolved & closed', fn:t => !isOpen(t) },
+  { id:'every',      label:'Everything', fn:() => true }
+];
+
+function filteredTickets(){
+  const f = STATE.filters;
+  const view = SAVED_VIEWS.find(v=>v.id===STATE.savedView) || SAVED_VIEWS[0];
+  let list = DB.tickets.filter(view.fn);
+  if (f.q){
+    const q = f.q.toLowerCase();
+    list = list.filter(t => (t.id+' '+t.subject+' '+t.conv[0].body+' '+person(t.requester).name+' '+t.tags.join(' ')).toLowerCase().includes(q));
+  }
+  if (f.status)   list = list.filter(t=>t.status===f.status);
+  if (f.priority) list = list.filter(t=>t.priority===f.priority);
+  if (f.type)     list = list.filter(t=>t.type===f.type);
+  if (f.group)    list = list.filter(t=>t.group===f.group);
+  if (f.agent)    list = list.filter(t => f.agent==='none' ? !t.agent : t.agent===f.agent);
+  const s = f.sort;
+  list.sort((a,b)=>{
+    if (s==='sla')      return a.resDue - b.resDue;
+    if (s==='created')  return b.created - a.created;
+    if (s==='updated')  return b.updated - a.updated;
+    if (s==='priority') return PRIORITY[a.priority].rank - PRIORITY[b.priority].rank || a.resDue-b.resDue;
+    return 0;
+  });
+  return list;
+}
+
+function selectBox(name, value, opts, extra=''){
+  return `<select data-filter="${name}" class="h-8 rounded-lg border border-line bg-white text-[12.5px] text-ink-500 pl-2.5 ${extra}">
+    ${opts.map(([v,l]) => `<option value="${v}" ${v===value?'selected':''}>${l}</option>`).join('')}</select>`;
+}
+
+function ticketRow(t){
+  const s = sla(t);
+  const sel = STATE.selection.has(t.id);
+  const last = t.conv[t.conv.length-1];
+  return `<div class="relative border-b border-line ${sel?'bg-brand-50':'row-hover'}">
+    <div class="flex items-center gap-3 px-4 py-2.5">
+      <input type="checkbox" data-check="${t.id}" ${sel?'checked':''} class="w-[15px] h-[15px] rounded border-line shrink-0" aria-label="Select ${t.id}">
+      <i class="led ${PRIORITY[t.priority].dot}" title="${t.priority} priority"></i>
+      <button data-open="${t.id}" class="min-w-0 flex-1 text-left">
+        <div class="flex items-center gap-2">
+          <span class="font-mono text-[11px] text-faint">${t.id}</span>
+          ${t.escalated ? `<span class="inline-flex items-center gap-1 h-[17px] px-1.5 rounded bg-alert-50 text-alert text-[10px] font-bold uppercase tracking-wide">Escalated</span>`:''}
+          <span class="text-[13.5px] font-medium text-ink truncate">${esc(t.subject)}</span>
+        </div>
+        <div class="flex items-center gap-2 mt-1 text-[11.5px] text-faint">
+          <span class="truncate">${esc(person(t.requester).name)} · ${esc(t.type)} · ${esc(t.category)}</span>
+          <span class="hidden md:inline truncate">· ${last.kind==='note'?'Private note':last.kind==='system'?'System':'Reply'} ${relTime(last.at)}</span>
+        </div>
+      </button>
+      <div class="hidden xl:flex items-center gap-1.5 w-[150px] shrink-0">
+        ${avatar(t.requester,24)}<span class="text-[12px] text-muted truncate">${esc(person(t.requester).name)}</span>
+      </div>
+      <div class="hidden sm:block w-[86px] shrink-0">${statusChip(t.status)}</div>
+      <div class="hidden lg:flex w-[130px] shrink-0 items-center gap-1.5">
+        ${t.agent ? avatar(t.agent,24)+`<span class="text-[12px] text-muted truncate">${esc(agent(t.agent).name.split(' ')[0])}</span>`
+                  : `<span class="text-[12px] text-faint italic">Unassigned</span>`}
+      </div>
+      <div class="w-[86px] shrink-0 text-right">
+        <div class="font-mono text-[12px] tick font-medium" style="color:${SLA_COLOR[s.state]}">${slaLabel(t)}</div>
+        <div class="text-[10.5px] text-faint">${s.done?'resolution':'to breach'}</div>
+      </div>
+      <button data-menu="${t.id}" class="w-7 h-7 grid place-items-center rounded-md text-faint hover:text-ink hover:bg-canvas shrink-0" aria-label="Row actions">${icon('dots','w-4 h-4')}</button>
+    </div>
+    <div class="burn"><i style="width:${s.pct}%;background:${SLA_COLOR[s.state]}"></i></div>
+  </div>`;
+}
+
+function renderTicketList(){
+  const list = filteredTickets();
+  const el = $('#ticketList');
+  if (!el) return;
+  el.innerHTML = list.length ? list.map(ticketRow).join('')
+    : emptyState('inbox','Nothing matches these filters','Try a broader saved view, or clear the search to see the full queue.', btn('Clear filters','clearFilters','ghost','refresh'));
+  const c = $('#resultCount'); if (c) c.textContent = list.length;
+  const bar = $('#bulkBar'); if (bar) bar.outerHTML = bulkBar();
+}
+
+function bulkBar(){
+  const n = STATE.selection.size;
+  if (!n) return '<div id="bulkBar" class="hidden"></div>';
+  return `<div id="bulkBar" class="flex flex-wrap items-center gap-2 px-4 h-12 bg-ink text-white border-b border-ink-600">
+    <span class="text-[12.5px] font-medium">${n} selected</span>
+    <span class="w-px h-5 bg-white/15 mx-1"></span>
+    <select data-bulk="assign" class="h-7 rounded-md bg-ink-600 border border-white/10 text-[12px] text-white pl-2">
+      <option value="">Assign to…</option>
+      ${DB.agents.filter(a=>a.active).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}
+    </select>
+    <select data-bulk="status" class="h-7 rounded-md bg-ink-600 border border-white/10 text-[12px] text-white pl-2">
+      <option value="">Set status…</option>
+      ${Object.keys(STATUS).map(s=>`<option value="${s}">${s}</option>`).join('')}
+    </select>
+    <select data-bulk="priority" class="h-7 rounded-md bg-ink-600 border border-white/10 text-[12px] text-white pl-2">
+      <option value="">Set priority…</option>
+      ${Object.keys(PRIORITY).map(s=>`<option value="${s}">${s}</option>`).join('')}
+    </select>
+    <button data-action="bulkMerge" class="h-7 px-2.5 rounded-md bg-ink-600 border border-white/10 text-[12px] hover:bg-ink-500">Merge</button>
+    <button data-action="bulkDelete" class="h-7 px-2.5 rounded-md text-[12px] text-alert-400 hover:bg-white/10">Delete</button>
+    <button data-action="clearSelection" class="ml-auto text-[12px] text-white/60 hover:text-white">Clear</button>
+  </div>`;
+}
+
+function viewTickets(){
+  const f = STATE.filters;
+  const tabs = SAVED_VIEWS.map(v => {
+    const n = DB.tickets.filter(v.fn).length;
+    const on = STATE.savedView===v.id;
+    return `<button data-view="${v.id}" class="h-8 px-2.5 rounded-lg text-[12.5px] font-medium whitespace-nowrap transition
+      ${on?'bg-ink text-white':'text-muted hover:bg-canvas hover:text-ink'}">${v.label}
+      <span class="font-mono text-[11px] ${on?'text-white/60':'text-faint'}">${n}</span></button>`;
+  }).join('');
+
+  return `<div class="p-5 max-w-[1400px] mx-auto fade-in">
+    ${pageHead('Tickets','Incidents and service requests across every group',
+      btn('Export CSV','export','ghost','ext') + btn('New ticket','newTicket','brand','plus'))}
+    ${card(`
+      <div class="flex items-center gap-1 p-2 border-b border-line overflow-x-auto">${tabs}</div>
+      <div class="flex flex-wrap items-center gap-2 p-3 border-b border-line">
+        <div class="relative flex-1 min-w-[200px]">
+          <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint">${icon('search','w-4 h-4')}</span>
+          <input id="ticketSearch" value="${esc(f.q)}" placeholder="Search subject, requester, tag or ID"
+            class="w-full h-8 pl-8 pr-3 rounded-lg border border-line bg-white text-[13px] placeholder:text-faint">
+        </div>
+        ${selectBox('status',f.status,[['','Any status'],...Object.keys(STATUS).map(s=>[s,s])])}
+        ${selectBox('priority',f.priority,[['','Any priority'],...Object.keys(PRIORITY).map(s=>[s,s])])}
+        ${selectBox('type',f.type,[['','Any type'],['Incident','Incident'],['Service request','Service request']])}
+        ${selectBox('group',f.group,[['','Any group'],...DB.groups.map(g=>[g.id,g.name])])}
+        ${selectBox('agent',f.agent,[['','Any assignee'],['none','Unassigned'],...DB.agents.map(a=>[a.id,a.name])])}
+        ${selectBox('sort',f.sort,[['sla','Sort: SLA due'],['updated','Sort: last updated'],['created','Sort: newest'],['priority','Sort: priority']])}
+      </div>
+      ${bulkBar()}
+      <div class="flex items-center gap-3 px-4 h-9 bg-canvas border-b border-line text-[11px] font-semibold uppercase tracking-[.09em] text-faint">
+        <input type="checkbox" data-check="__all" class="w-[15px] h-[15px] rounded border-line" aria-label="Select all">
+        <span class="flex-1">Ticket · <span id="resultCount" class="font-mono normal-case tracking-normal">0</span> results</span>
+        <span class="hidden xl:block w-[150px]">Requester</span>
+        <span class="hidden sm:block w-[86px]">Status</span>
+        <span class="hidden lg:block w-[130px]">Assignee</span>
+        <span class="w-[86px] text-right">SLA</span>
+        <span class="w-7"></span>
+      </div>
+      <div id="ticketList"></div>
+    `)}
+  </div>`;
+}
+
+/* ============================================================
+   Agent — ticket detail
+   ============================================================ */
+function convEntry(t, c, i){
+  const p = person(c.by);
+  const isAgent = !!agent(c.by);
+  if (c.kind === 'system'){
+    return `<div class="flex items-center gap-3 py-1.5"><span class="h-px flex-1 bg-line"></span>
+      <span class="text-[11.5px] text-faint">${esc(c.body)} · ${relTime(c.at)}</span><span class="h-px flex-1 bg-line"></span></div>`;
+  }
+  const note = c.kind === 'note';
+  const head = `<div class="flex items-center gap-2 mb-1.5">
+      <span class="text-[13px] font-semibold text-ink">${esc(p.name)}</span>
+      ${isAgent ? `<span class="text-[11px] text-faint">${esc(agent(c.by).title)}</span>` : `<span class="text-[11px] text-faint">Requester</span>`}
+      ${note ? `<span class="inline-flex items-center gap-1 h-[18px] px-1.5 rounded bg-signal-100 text-signal text-[10px] font-bold uppercase tracking-wide">${icon('lock','w-3 h-3')}Private note</span>`
+             : c.kind==='description' ? `<span class="text-[10px] font-bold uppercase tracking-wide text-faint">Original request</span>` : ''}
+      <span class="ml-auto text-[11.5px] text-faint" title="${fmtDate(c.at)}">${relTime(c.at)}</span>
+    </div>`;
+  const atts = (c.atts||[]).length ? `<div class="flex flex-wrap gap-2 mt-3">${c.atts.map(a=>`
+      <span class="inline-flex items-center gap-1.5 h-7 px-2 rounded-lg border border-line bg-white text-[12px] text-ink-500">${icon('clip','w-3.5 h-3.5 text-faint')}${esc(a)}</span>`).join('')}</div>` : '';
+  return `<div class="flex gap-3">
+    <div class="pt-0.5">${avatar(c.by,32)}</div>
+    <div class="min-w-0 flex-1 rounded-xl border p-3.5 ${note?'bg-signal-50 border-signal-100':'bg-white border-line'}">
+      ${head}
+      <div class="text-[13.5px] leading-relaxed text-ink-500 whitespace-pre-line">${esc(c.body)}</div>
+      ${atts}
+    </div></div>`;
+}
+
+function propRow(label, control){
+  return `<div class="flex items-center gap-3 px-3.5 py-2 border-b border-line last:border-0">
+    <span class="text-[12px] text-muted w-[86px] shrink-0">${label}</span>
+    <div class="flex-1 min-w-0">${control}</div></div>`;
+}
+function propSelect(field, value, opts){
+  return `<select data-prop="${field}" class="w-full h-8 rounded-lg border border-line bg-white text-[12.5px] text-ink pl-2.5">
+    ${opts.map(([v,l])=>`<option value="${v}" ${String(v)===String(value)?'selected':''}>${l}</option>`).join('')}</select>`;
+}
+
+function slaPanel(t){
+  const s = sla(t);
+  const fr = t.respondedAt ? (t.respondedAt <= t.frDue ? 'met' : 'missed') : (Date.now() > t.frDue ? 'breached' : 'ok');
+  const frLabel = t.respondedAt ? (fr==='met'?'Met '+durLabel(t.frDue-t.respondedAt)+' early':'Missed by '+durLabel(t.respondedAt-t.frDue))
+                                : (fr==='breached'?'Over by '+durLabel(Date.now()-t.frDue):'Due in '+durLabel(t.frDue-Date.now()));
+  return card(`${cardHead('Service level')}
+    <div class="p-3.5 space-y-3.5">
+      <div>
+        <div class="flex items-baseline justify-between"><span class="text-[12px] text-muted">First response</span>
+          <span class="font-mono text-[12px] tick" style="color:${SLA_COLOR[fr]}">${frLabel}</span></div>
+        <div class="burn mt-1.5 rounded-full"><i style="width:${t.respondedAt?100:Math.min(100,((Date.now()-t.created)/(t.frDue-t.created))*100)}%;background:${SLA_COLOR[fr]}"></i></div>
+      </div>
+      <div>
+        <div class="flex items-baseline justify-between"><span class="text-[12px] text-muted">Resolution</span>
+          <span class="font-mono text-[12px] tick font-medium" data-countdown="${t.id}" style="color:${SLA_COLOR[s.state]}">${slaLabel(t)}</span></div>
+        <div class="burn mt-1.5 rounded-full"><i style="width:${s.pct}%;background:${SLA_COLOR[s.state]}"></i></div>
+        <div class="text-[11px] text-faint mt-1.5">Target ${fmtDate(t.resDue)} · ${esc(DB.slas.find(x=>x.name.includes(t.priority))?.name || 'Default policy')}</div>
+      </div>
+    </div>`);
+}
+
+function viewTicket(id){
+  const t = ticket(id);
+  if (!t) return emptyState('inbox','Ticket not found','It may have been merged or deleted.', btn('Back to tickets','allTickets','ghost','back'));
+  const r = person(t.requester);
+  const s = sla(t);
+  const linkedAssets = t.assets.map(a=>asset(a)).filter(Boolean);
+
+  return `<div class="fade-in">
+    <div class="bg-white border-b border-line px-5 py-3.5 sticky top-0 z-20">
+      <div class="max-w-[1400px] mx-auto">
+        <div class="flex items-center gap-2 text-[12px] text-muted mb-2">
+          <button data-action="allTickets" class="inline-flex items-center gap-1 hover:text-ink">${icon('back','w-3.5 h-3.5')} Tickets</button>
+          <span class="text-line">/</span><span class="font-mono">${t.id}</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <i class="led ${PRIORITY[t.priority].dot}"></i>
+          <h1 class="font-display text-[19px] font-semibold text-ink flex-1 min-w-[240px]">${esc(t.subject)}</h1>
+          ${statusChip(t.status)}
+          <div class="flex items-center gap-2">
+            ${isOpen(t) ? btn('Resolve','resolveTicket','brand','check') : btn('Reopen','reopenTicket','ghost','refresh')}
+            ${btn('Escalate','escalate','ghost','warn')}
+            ${btn('Merge','mergeTicket','ghost','link')}
+            ${btn('Delete','deleteTicket','danger','trash')}
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[12px] text-muted">
+          <span>Opened ${relTime(t.created)} by ${esc(r.name)}</span>
+          <span>·</span><span>via ${esc(t.source)}</span>
+          <span>·</span><span>${esc(group(t.group).name)}</span>
+          <span>·</span><span class="font-mono" style="color:${SLA_COLOR[s.state]}">SLA ${slaLabel(t)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="max-w-[1400px] mx-auto p-5 grid xl:grid-cols-[1fr_340px] gap-4 items-start">
+      <div class="space-y-4 min-w-0">
+        <div class="space-y-3">${t.conv.map((c,i)=>convEntry(t,c,i)).join('')}</div>
+        ${card(`
+          <div class="flex items-center gap-1 p-2 border-b border-line">
+            <button data-tab="reply" class="h-8 px-3 rounded-lg text-[12.5px] font-medium ${STATE.composerTab==='reply'?'bg-ink text-white':'text-muted hover:bg-canvas'}">Reply to requester</button>
+            <button data-tab="note" class="h-8 px-3 rounded-lg text-[12.5px] font-medium ${STATE.composerTab==='note'?'bg-signal text-white':'text-muted hover:bg-canvas'}">Private note</button>
+            <div class="ml-auto flex items-center gap-2">
+              <select data-action="canned" class="h-8 rounded-lg border border-line bg-white text-[12px] text-muted pl-2.5">
+                <option value="">Canned response…</option>
+                ${DB.canned.map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="p-3">
+            <textarea id="composer" rows="5" placeholder="${STATE.composerTab==='reply'?`Write to ${esc(r.name.split(' ')[0])}…`:'Visible to agents only — record what you found, tried, or ruled out.'}"
+              class="w-full text-[13.5px] leading-relaxed resize-y border-0 focus:ring-0 outline-none placeholder:text-faint bg-transparent"></textarea>
+            <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-line">
+              <button data-action="attach" class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line text-[12.5px] text-muted hover:bg-canvas">${icon('clip','w-3.5 h-3.5')}Attach</button>
+              <label class="inline-flex items-center gap-1.5 text-[12.5px] text-muted ml-1"><input type="checkbox" data-toggle="resolveOnSend" class="w-[15px] h-[15px] rounded border-line"> Resolve on send</label>
+              <div class="flex-1"></div>
+              <span class="text-[11.5px] text-faint hidden sm:block">⌘↵ to send</span>
+              <button data-action="send" class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-white text-[12.5px] font-semibold ${STATE.composerTab==='reply'?'bg-brand hover:bg-brand-600':'bg-signal hover:bg-[#9C6509]'}">
+                ${icon('send','w-3.5 h-3.5')}${STATE.composerTab==='reply'?'Send reply':'Save note'}</button>
+            </div>
+          </div>`)}
+      </div>
+
+      <div class="space-y-4">
+        ${card(`${cardHead('Properties')}
+          ${propRow('Status', propSelect('status', t.status, Object.keys(STATUS).map(s=>[s,s])))}
+          ${propRow('Priority', propSelect('priority', t.priority, Object.keys(PRIORITY).map(s=>[s,s])))}
+          ${propRow('Type', propSelect('type', t.type, [['Incident','Incident'],['Service request','Service request']]))}
+          ${propRow('Group', propSelect('group', t.group, DB.groups.map(g=>[g.id,g.name])))}
+          ${propRow('Assignee', propSelect('agent', t.agent||'', [['','Unassigned'],...DB.agents.filter(a=>a.active).map(a=>[a.id,a.name])]))}
+          ${propRow('Category', propSelect('category', t.category, ['Network','Hardware','Software','Access','Email','Printing','Security','Facilities'].map(c=>[c,c])))}
+        `)}
+        ${slaPanel(t)}
+        ${card(`${cardHead('Requester')}
+          <div class="p-3.5">
+            <div class="flex items-center gap-2.5">${avatar(t.requester,36)}
+              <div class="min-w-0"><div class="text-[13.5px] font-semibold text-ink truncate">${esc(r.name)}</div>
+                <div class="text-[12px] text-muted truncate">${esc(r.title)} · ${esc(r.dept)}</div></div></div>
+            <dl class="mt-3 space-y-1.5 text-[12px]">
+              <div class="flex gap-2"><dt class="text-faint w-[52px]">Email</dt><dd class="text-ink-500 truncate">${esc(r.email)}</dd></div>
+              <div class="flex gap-2"><dt class="text-faint w-[52px]">Phone</dt><dd class="text-ink-500 font-mono">${esc(r.phone)}</dd></div>
+              <div class="flex gap-2"><dt class="text-faint w-[52px]">Site</dt><dd class="text-ink-500">${esc(r.site)}</dd></div>
+            </dl>
+            <button data-action="requesterHistory" class="mt-3 w-full h-8 rounded-lg border border-line text-[12.5px] text-ink-500 hover:bg-canvas">
+              ${DB.tickets.filter(x=>x.requester===t.requester).length} tickets from this person</button>
+          </div>`)}
+        ${card(`${cardHead('Tasks', btn('Add','addTask','ghost','plus'))}
+          <div class="p-3.5 space-y-2">${t.tasks.length ? t.tasks.map((task,i)=>`
+            <label class="flex items-start gap-2.5 cursor-pointer">
+              <input type="checkbox" data-task="${i}" ${task.done?'checked':''} class="w-[15px] h-[15px] rounded border-line mt-0.5">
+              <span class="text-[12.5px] leading-snug ${task.done?'line-through text-faint':'text-ink-500'}">${esc(task.t)}</span>
+              ${task.who?avatar(task.who,20,'ml-auto shrink-0'):''}
+            </label>`).join('') : '<p class="text-[12.5px] text-muted">No tasks yet. Break the work down if more than one person is involved.</p>'}</div>`)}
+        ${card(`${cardHead('Linked assets', btn('Link','linkAsset','ghost','link'))}
+          <div class="p-3.5 space-y-2">${linkedAssets.length ? linkedAssets.map(a=>`
+            <button data-asset="${a.id}" class="w-full flex items-center gap-2.5 p-2 rounded-lg border border-line hover:bg-canvas text-left">
+              <span class="text-faint">${icon(a.type==='Laptop'?'laptop':a.type==='Mobile'?'phone':a.type==='Printer'?'monitor':'server','w-4 h-4')}</span>
+              <span class="min-w-0"><span class="block text-[12.5px] font-medium text-ink truncate">${esc(a.name)}</span>
+              <span class="block font-mono text-[11px] text-faint">${a.id} · ${esc(a.model)}</span></span>
+            </button>`).join('') : '<p class="text-[12.5px] text-muted">No assets linked.</p>'}</div>`)}
+        ${card(`${cardHead('Tags', btn('Add','addTag','ghost','plus'))}
+          <div class="p-3.5 flex flex-wrap gap-1.5">${t.tags.length?t.tags.map(tagPill).join(''):'<span class="text-[12.5px] text-muted">No tags.</span>'}</div>`)}
+      </div>
+    </div>
+  </div>`;
+}
+/* ============================================================
+   Agent — assets
+   ============================================================ */
+const ASSET_ICON = { Laptop:'laptop', Mobile:'phone', Printer:'monitor', Server:'server', Switch:'server', Dock:'monitor', License:'layers' };
+const ASSET_STATUS = { 'In use':'bg-brand-50 text-brand border-brand-100', 'In stock':'bg-[#EFF1F5] text-muted border-line', 'Needs repair':'bg-alert-50 text-alert border-alert-100', 'Retired':'bg-[#EFF1F5] text-faint border-line' };
+
+function viewAssets(){
+  const q = (STATE.filters.assetQ||'').toLowerCase();
+  const type = STATE.filters.assetType||'';
+  let list = DB.assets.filter(a => (!type || a.type===type) &&
+    (!q || (a.id+a.name+a.model+a.serial+(a.user?person(a.user).name:'')).toLowerCase().includes(q)));
+  const byType = [...new Set(DB.assets.map(a=>a.type))];
+  const expiring = DB.assets.filter(a => a.warranty < ahead(24*90)).length;
+
+  return `<div class="p-5 max-w-[1400px] mx-auto fade-in">
+    ${pageHead('Assets','Everything the service desk is accountable for, and who holds it',
+      btn('Import','importAssets','ghost','ext') + btn('Add asset','addAsset','brand','plus'))}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      ${kpi('Total assets', DB.assets.length, 'Across 4 sites')}
+      ${kpi('In use', DB.assets.filter(a=>a.status==='In use').length, 'Assigned or deployed','brand')}
+      ${kpi('Needs repair', DB.assets.filter(a=>a.status==='Needs repair').length, 'Blocking someone right now','alert')}
+      ${kpi('Warranty <90d', expiring, 'Plan replacement or renewal','signal')}
+    </div>
+    ${card(`
+      <div class="flex flex-wrap items-center gap-2 p-3 border-b border-line">
+        <div class="relative flex-1 min-w-[200px]">
+          <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint">${icon('search','w-4 h-4')}</span>
+          <input id="assetSearch" value="${esc(STATE.filters.assetQ||'')}" placeholder="Search name, model, serial or holder"
+            class="w-full h-8 pl-8 pr-3 rounded-lg border border-line text-[13px] placeholder:text-faint">
+        </div>
+        ${selectBox('assetType',type,[['','Any type'],...byType.map(t=>[t,t])])}
+      </div>
+      <div class="hidden md:flex items-center gap-3 px-4 h-9 bg-canvas border-b border-line text-[11px] font-semibold uppercase tracking-[.09em] text-faint">
+        <span class="flex-1">Asset</span><span class="w-[90px]">Type</span><span class="w-[150px]">Assigned to</span>
+        <span class="w-[110px]">Site</span><span class="w-[110px]">Status</span><span class="w-[110px] text-right">Warranty</span>
+      </div>
+      <div>${list.map(a => {
+        const exp = a.warranty < NOW;
+        const soon = !exp && a.warranty < ahead(24*90);
+        return `<button data-asset="${a.id}" class="w-full flex flex-wrap md:flex-nowrap items-center gap-3 px-4 py-2.5 border-b border-line last:border-0 row-hover text-left">
+          <span class="flex items-center gap-2.5 flex-1 min-w-0">
+            <span class="w-8 h-8 rounded-lg bg-canvas border border-line grid place-items-center text-muted shrink-0">${icon(ASSET_ICON[a.type]||'server','w-4 h-4')}</span>
+            <span class="min-w-0"><span class="block text-[13px] font-medium text-ink truncate">${esc(a.name)}</span>
+            <span class="block font-mono text-[11px] text-faint truncate">${a.id} · ${esc(a.serial)}</span></span>
+          </span>
+          <span class="w-[90px] text-[12.5px] text-muted">${esc(a.type)}</span>
+          <span class="w-[150px] flex items-center gap-1.5">${a.user?avatar(a.user,22)+`<span class="text-[12.5px] text-ink-500 truncate">${esc(person(a.user).name)}</span>`:'<span class="text-[12.5px] text-faint italic">Unassigned</span>'}</span>
+          <span class="w-[110px] text-[12.5px] text-muted truncate">${esc(a.site)}</span>
+          <span class="w-[110px]"><span class="inline-flex items-center h-[22px] px-2 rounded-md border text-[11px] font-semibold ${ASSET_STATUS[a.status]}">${a.status}</span></span>
+          <span class="w-[110px] text-right font-mono text-[11.5px] ${exp?'text-alert':soon?'text-signal':'text-muted'}">${exp?'Expired':fmtDay(a.warranty)}</span>
+        </button>`;
+      }).join('') || emptyState('server','No assets match','Adjust the search or type filter.')}
+      </div>`)}
+  </div>`;
+}
+
+/* ============================================================
+   Agent — knowledge base
+   ============================================================ */
+function viewKB(){
+  const cats = ['All', ...new Set(DB.articles.map(a=>a.cat))];
+  const list = DB.articles.filter(a => STATE.kbCat==='All' || a.cat===STATE.kbCat);
+  return `<div class="p-5 max-w-[1400px] mx-auto fade-in">
+    ${pageHead('Knowledge','Answers that stop tickets being raised twice', btn('New article','newArticle','brand','plus'))}
+    <div class="grid lg:grid-cols-[190px_1fr] gap-4 items-start">
+      ${card(`<div class="p-2">${cats.map(c=>`
+        <button data-kbcat="${esc(c)}" class="w-full text-left h-8 px-2.5 rounded-lg text-[12.5px] font-medium transition ${STATE.kbCat===c?'bg-ink text-white':'text-muted hover:bg-canvas hover:text-ink'}">
+          ${esc(c)}<span class="font-mono text-[11px] ${STATE.kbCat===c?'text-white/60':'text-faint'} float-right">${c==='All'?DB.articles.length:DB.articles.filter(a=>a.cat===c).length}</span>
+        </button>`).join('')}</div>`)}
+      <div class="grid md:grid-cols-2 gap-3">${list.map(a=>`
+        <button data-article="${a.id}" class="text-left bg-white border border-line rounded-xl shadow-card p-4 hover:border-[#CBD1DC] transition">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint">${esc(a.cat)}</span>
+            ${a.status==='Draft'?'<span class="inline-flex items-center h-[18px] px-1.5 rounded bg-signal-50 text-signal text-[10px] font-bold uppercase">Draft</span>':''}
+          </div>
+          <h3 class="font-display text-[15px] font-semibold text-ink leading-snug">${esc(a.title)}</h3>
+          <div class="flex items-center gap-3 mt-3 text-[11.5px] text-faint font-mono">
+            <span>${a.views.toLocaleString()} views</span><span>${a.up} helpful</span><span>${relTime(a.updated)}</span>
+          </div>
+        </button>`).join('')}</div>
+    </div></div>`;
+}
+
+function viewArticle(id){
+  const a = article(id);
+  if (!a) return emptyState('book','Article not found','It may have been unpublished.');
+  const related = DB.articles.filter(x=>x.id!==a.id && x.cat===a.cat).slice(0,3);
+  return `<div class="p-5 max-w-[860px] mx-auto fade-in">
+    <button data-action="backKB" class="inline-flex items-center gap-1 text-[12px] text-muted hover:text-ink mb-3">${icon('back','w-3.5 h-3.5')} Knowledge</button>
+    ${card(`<article class="p-6">
+      <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.09em] text-faint mb-2">${esc(a.cat)}
+        ${a.status==='Draft'?'<span class="px-1.5 rounded bg-signal-50 text-signal">Draft</span>':''}</div>
+      <h1 class="font-display text-[26px] font-semibold leading-tight">${esc(a.title)}</h1>
+      <div class="flex items-center gap-3 mt-3 pb-4 border-b border-line text-[12px] text-muted">
+        ${avatar(a.author,24)}<span>${esc(person(a.author).name)}</span><span class="text-line">·</span>
+        <span>Updated ${relTime(a.updated)}</span><span class="text-line">·</span><span class="font-mono">${a.views.toLocaleString()} views</span>
+        <div class="ml-auto flex gap-2">${btn('Edit','editArticle','ghost','edit')}${btn('Share','shareArticle','ghost','link')}</div>
+      </div>
+      <div class="prose-kb mt-4 text-[14px]">${a.body}</div>
+      <div class="flex flex-wrap gap-1.5 mt-6">${a.tags.map(tagPill).join('')}</div>
+      <div class="mt-6 pt-4 border-t border-line flex flex-wrap items-center gap-3">
+        <span class="text-[13px] text-muted">Did this solve it?</span>
+        <button data-vote="up" data-id="${a.id}" class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-[12.5px] hover:bg-brand-50 hover:border-brand-100 hover:text-brand">${icon('check','w-3.5 h-3.5')} Yes <span class="font-mono text-faint">${a.up}</span></button>
+        <button data-vote="down" data-id="${a.id}" class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-[12.5px] hover:bg-alert-50 hover:border-alert-100 hover:text-alert">${icon('x','w-3.5 h-3.5')} No <span class="font-mono text-faint">${a.down}</span></button>
+      </div>
+    </article>`)}
+    ${related.length?`<div class="mt-4"><h2 class="font-display text-[14px] font-semibold mb-2">More in ${esc(a.cat)}</h2>
+      <div class="grid sm:grid-cols-3 gap-3">${related.map(r=>`
+        <button data-article="${r.id}" class="text-left bg-white border border-line rounded-xl p-3 hover:border-[#CBD1DC]">
+          <div class="text-[13px] font-medium leading-snug">${esc(r.title)}</div>
+          <div class="font-mono text-[11px] text-faint mt-1.5">${r.up} found this helpful</div></button>`).join('')}</div></div>`:''}
+  </div>`;
+}
+
+/* ============================================================
+   Agent — service catalog
+   ============================================================ */
+function catalogGrid(onBehalf){
+  const cats = ['All', ...new Set(DB.catalog.map(c=>c.cat))];
+  const list = DB.catalog.filter(c => STATE.catalogCat==='All' || c.cat===STATE.catalogCat);
+  return `<div class="flex flex-wrap gap-1.5 mb-4">${cats.map(c=>`
+      <button data-catcat="${esc(c)}" class="h-8 px-3 rounded-lg text-[12.5px] font-medium border transition
+        ${STATE.catalogCat===c?'bg-ink text-white border-ink':'bg-white text-muted border-line hover:text-ink'}">${esc(c)}</button>`).join('')}</div>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${list.map(c=>`
+      <button data-catalog="${c.id}" class="text-left bg-white border border-line rounded-xl shadow-card p-4 hover:border-brand-100 hover:shadow-pop transition group">
+        <div class="w-9 h-9 rounded-lg bg-brand-50 border border-brand-100 grid place-items-center text-brand mb-3">${icon(c.icon,'w-[18px] h-[18px]')}</div>
+        <h3 class="font-display text-[15px] font-semibold text-ink">${esc(c.name)}</h3>
+        <p class="text-[12.5px] text-muted mt-1 leading-relaxed">${esc(c.desc)}</p>
+        <div class="flex items-center gap-2 mt-3 pt-3 border-t border-line text-[11.5px]">
+          <span class="font-mono text-faint">${esc(c.sla)}</span>
+          ${c.approval!=='None'?`<span class="inline-flex items-center gap-1 text-signal">${icon('shield','w-3 h-3')}${esc(c.approval)} approval</span>`:''}
+          <span class="ml-auto text-brand font-semibold group-hover:underline">${onBehalf?'Raise':'Request'}</span>
+        </div>
+      </button>`).join('')}</div>`;
+}
+function viewCatalog(){
+  return `<div class="p-5 max-w-[1400px] mx-auto fade-in">
+    ${pageHead('Service catalog','What people can ask for, and what we promise in return', btn('Add item','addCatalog','brand','plus'))}
+    ${catalogGrid(true)}</div>`;
+}
+
+/* ============================================================
+   Agent — changes & problems
+   ============================================================ */
+const RISK = { High:'bg-alert-50 text-alert border-alert-100', Medium:'bg-signal-50 text-signal border-signal-100', Low:'bg-brand-50 text-brand border-brand-100' };
+const CSTATE = { 'Awaiting approval':'bg-signal-50 text-signal border-signal-100', 'Scheduled':'bg-violet-50 text-violet border-[#DCD8F0]', 'In progress':'bg-ink text-white border-ink', 'Completed':'bg-brand-50 text-brand border-brand-100', 'Rejected':'bg-[#EFF1F5] text-muted border-line' };
+
+function viewChanges(){
+  return `<div class="p-5 max-w-[1400px] mx-auto fade-in">
+    ${pageHead('Changes','Planned work, who signed it off, and how we back out', btn('Raise change','newChange','brand','plus'))}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      ${kpi('Awaiting approval', DB.changes.filter(c=>c.state==='Awaiting approval').length,'Blocking scheduled work','signal')}
+      ${kpi('Scheduled', DB.changes.filter(c=>c.state==='Scheduled').length,'Next 14 days')}
+      ${kpi('In progress', DB.changes.filter(c=>c.state==='In progress').length,'Running now','brand')}
+      ${kpi('Success rate','94%','Last 90 days','brand')}
+    </div>
+    <div class="space-y-3">${DB.changes.map(c=>{
+      const future = c.window > NOW;
+      return `<div class="bg-white border border-line rounded-xl shadow-card p-4">
+        <div class="flex flex-wrap items-start gap-3">
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-mono text-[11.5px] text-faint">${c.id}</span>
+              <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold ${CSTATE[c.state]}">${c.state}</span>
+              <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold ${RISK[c.risk]}">${c.risk} risk</span>
+              <span class="text-[11.5px] text-faint">${c.type}</span>
+            </div>
+            <h3 class="font-display text-[15px] font-semibold text-ink mt-1.5">${esc(c.title)}</h3>
+            <p class="text-[12.5px] text-muted mt-1 leading-relaxed">${esc(c.plan)}</p>
+            <p class="text-[12.5px] text-muted mt-1"><span class="text-faint">Back out:</span> ${esc(c.backout)}</p>
+          </div>
+          <div class="w-full sm:w-[210px] shrink-0 sm:border-l sm:border-line sm:pl-4 space-y-2">
+            <div><div class="text-[11px] uppercase tracking-[.09em] text-faint">Window</div>
+              <div class="font-mono text-[12.5px] text-ink">${fmtDate(c.window)} · ${c.dur}</div>
+              <div class="text-[11.5px] ${future?'text-muted':'text-faint'}">${future?'in '+durLabel(c.window-NOW):relTime(c.window)}</div></div>
+            <div><div class="text-[11px] uppercase tracking-[.09em] text-faint">Impact</div>
+              <div class="text-[12.5px] text-ink-500">${esc(c.impact)}</div></div>
+            <div><div class="text-[11px] uppercase tracking-[.09em] text-faint mb-1">Approvals</div>
+              <div class="space-y-1">${c.approvals.map(a=>`<div class="flex items-center gap-1.5 text-[12px]">
+                ${avatar(a.by,20)}<span class="text-ink-500 truncate flex-1">${esc(person(a.by).name)}</span>
+                <span class="${a.status==='Approved'?'text-brand':a.status==='Rejected'?'text-alert':'text-signal'} font-medium">${a.status}</span></div>`).join('')}</div></div>
+            ${c.state==='Awaiting approval'?`<div class="flex gap-2 pt-1">
+              <button data-approve="${c.id}" class="flex-1 h-8 rounded-lg bg-brand text-white text-[12.5px] font-semibold hover:bg-brand-600">Approve</button>
+              <button data-reject="${c.id}" class="h-8 px-2.5 rounded-lg border border-alert-100 text-alert text-[12.5px] font-medium hover:bg-alert-50">Reject</button></div>`:''}
+          </div>
+        </div></div>`;
+    }).join('')}</div></div>`;
+}
+
+function viewProblems(){
+  const PS = { 'Root cause identified':'bg-signal-50 text-signal border-signal-100','Under investigation':'bg-violet-50 text-violet border-[#DCD8F0]','Resolved':'bg-brand-50 text-brand border-brand-100' };
+  return `<div class="p-5 max-w-[1400px] mx-auto fade-in">
+    ${pageHead('Problems','Recurring causes behind clusters of incidents', btn('Raise problem','newProblem','brand','plus'))}
+    <div class="space-y-3">${DB.problems.map(p=>`
+      <div class="bg-white border border-line rounded-xl shadow-card p-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono text-[11.5px] text-faint">${p.id}</span>
+          <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold ${PS[p.status]}">${p.status}</span>
+          ${priorityTag(p.priority)}
+          <span class="ml-auto flex items-center gap-1.5 text-[12px] text-muted">${avatar(p.owner,22)}${esc(person(p.owner).name)}</span>
+        </div>
+        <h3 class="font-display text-[15px] font-semibold mt-2">${esc(p.title)}</h3>
+        <div class="grid sm:grid-cols-2 gap-3 mt-3">
+          <div class="rounded-lg bg-canvas border border-line p-3">
+            <div class="text-[11px] uppercase tracking-[.09em] text-faint mb-1">Root cause</div>
+            <p class="text-[12.5px] text-ink-500 leading-relaxed">${esc(p.cause)}</p></div>
+          <div class="rounded-lg bg-canvas border border-line p-3">
+            <div class="text-[11px] uppercase tracking-[.09em] text-faint mb-1">Workaround</div>
+            <p class="text-[12.5px] text-ink-500 leading-relaxed">${esc(p.workaround)}</p></div>
+        </div>
+        <div class="flex items-center gap-3 mt-3 text-[12px] text-muted">
+          <button data-action="allTickets" class="inline-flex items-center gap-1.5 text-brand font-medium hover:underline">${icon('link','w-3.5 h-3.5')}${p.linked} linked incidents</button>
+          <span class="text-line">·</span><span>Opened ${relTime(p.opened)}</span>
+        </div>
+      </div>`).join('')}</div></div>`;
+}
+
+/* ============================================================
+   Agent — reports
+   ============================================================ */
+function donut(data){
+  const total = data.reduce((s,d)=>s+d.v,0) || 1;
+  let offset = 0;
+  const arcs = data.map(d => {
+    const frac = d.v/total, dash = frac*339.3;
+    const seg = `<circle cx="60" cy="60" r="54" fill="none" stroke="${d.c}" stroke-width="12"
+      stroke-dasharray="${dash} ${339.3-dash}" stroke-dashoffset="${-offset}" transform="rotate(-90 60 60)"><title>${d.k}: ${d.v}</title></circle>`;
+    offset += dash; return seg;
+  }).join('');
+  return `<div class="flex items-center gap-5 flex-wrap">
+    <svg viewBox="0 0 120 120" class="w-[120px] h-[120px] shrink-0"><circle cx="60" cy="60" r="54" fill="none" stroke="#EEF0F4" stroke-width="12"/>${arcs}
+      <text x="60" y="58" text-anchor="middle" class="font-mono" font-size="19" fill="#10141C">${total}</text>
+      <text x="60" y="72" text-anchor="middle" font-size="8.5" fill="#8B93A3">tickets</text></svg>
+    <div class="space-y-1.5 flex-1 min-w-[140px]">${data.map(d=>`
+      <div class="flex items-center gap-2 text-[12.5px]"><i class="w-2.5 h-2.5 rounded-sm" style="background:${d.c}"></i>
+        <span class="text-ink-500 flex-1">${d.k}</span><span class="font-mono text-muted">${d.v}</span>
+        <span class="font-mono text-faint w-9 text-right">${Math.round(d.v/total*100)}%</span></div>`).join('')}</div></div>`;
+}
+
+function viewReports(){
+  const cats = {};
+  DB.tickets.forEach(t => cats[t.category] = (cats[t.category]||0)+1);
+  const palette = ['#0E7C6B','#B8760B','#5A4FB0','#BC332D','#4C6EF5','#8B93A3','#0B6558','#E9A23B'];
+  const catData = Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=>({k,v,c:palette[i%palette.length]}));
+  const srcs = {};
+  DB.tickets.forEach(t => srcs[t.source] = (srcs[t.source]||0)+1);
+  const srcData = Object.entries(srcs).sort((a,b)=>b[1]-a[1]);
+  const maxSrc = Math.max(...srcData.map(s=>s[1]));
+
+  const groupPerf = DB.groups.map(g => {
+    const ts = DB.tickets.filter(t=>t.group===g.id);
+    const resolved = ts.filter(t=>t.resolvedAt);
+    const avg = resolved.length ? resolved.reduce((s,t)=>s+(t.resolvedAt-t.created),0)/resolved.length : 0;
+    const met = resolved.filter(t=>t.resolvedAt<=t.resDue).length;
+    return { g, n:ts.length, avg, pct: resolved.length?Math.round(met/resolved.length*100):100 };
+  }).sort((a,b)=>b.n-a.n);
+  const maxAvg = Math.max(1,...groupPerf.map(p=>p.avg));
+
+  return `<div class="p-5 max-w-[1400px] mx-auto fade-in">
+    ${pageHead('Reports','Last 30 days · all groups', selectBox('range','30',[['7','Last 7 days'],['30','Last 30 days'],['90','Last quarter']]) + btn('Export','export','ghost','ext'))}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      ${kpi('Median first response','42m','Target 1h','brand')}
+      ${kpi('Median resolution','6h 20m','Down 14% on last month','brand')}
+      ${kpi('SLA attainment','91%','Resolution, all priorities','signal')}
+      ${kpi('Reopen rate','4.2%','12 of 286 resolved')}
+    </div>
+    <div class="grid lg:grid-cols-2 gap-4 mb-4">
+      ${card(`${cardHead('Where tickets come from')}<div class="p-4 space-y-2.5">${srcData.map(([k,v])=>`
+        <div class="flex items-center gap-3"><span class="text-[12.5px] text-ink-500 w-[74px]">${k}</span>
+          <div class="flex-1 h-5 rounded bg-canvas overflow-hidden"><div class="h-full bg-ink-600 rounded" style="width:${(v/maxSrc)*100}%"></div></div>
+          <span class="font-mono text-[12px] text-muted w-6 text-right">${v}</span></div>`).join('')}</div>`)}
+      ${card(`${cardHead('Category mix')}<div class="p-4">${donut(catData)}</div>`)}
+    </div>
+    ${card(`${cardHead('Group performance', '<span class="text-muted">Avg resolution time and SLA attainment</span>')}
+      <div class="p-4 space-y-3.5">${groupPerf.map(p=>`
+        <div>
+          <div class="flex items-center justify-between text-[12.5px] mb-1.5">
+            <span class="font-medium text-ink">${esc(p.g.name)}</span>
+            <span class="flex items-center gap-3 font-mono text-[11.5px]">
+              <span class="text-muted">${p.n} tickets</span>
+              <span class="text-ink-500">${p.avg?durLabel(p.avg):'—'}</span>
+              <span class="${p.pct>=90?'text-brand':p.pct>=75?'text-signal':'text-alert'}">${p.pct}% SLA</span></span>
+          </div>
+          <div class="h-2 rounded-full bg-canvas overflow-hidden"><div class="h-full rounded-full bg-brand" style="width:${(p.avg/maxAvg)*100}%"></div></div>
+        </div>`).join('')}</div>`)}
+  </div>`;
+}
+
+/* ============================================================
+   Agent — admin
+   ============================================================ */
+const ADMIN_TABS = [
+  { id:'agents', label:'Agents & roles', icon:'users' },
+  { id:'groups', label:'Groups', icon:'layers' },
+  { id:'sla', label:'SLA policies', icon:'clock' },
+  { id:'hours', label:'Business hours', icon:'clock' },
+  { id:'rules', label:'Automations', icon:'zap' },
+  { id:'fields', label:'Ticket fields', icon:'note' },
+  { id:'email', label:'Email templates', icon:'mail' }
+];
+function toggle(on, action, id){
+  return `<button data-toggle-row="${action}" data-id="${id}" role="switch" aria-checked="${on}"
+    class="w-9 h-[20px] rounded-full transition relative shrink-0 ${on?'bg-brand':'bg-[#D3D8E0]'}">
+    <i class="absolute top-[2px] w-4 h-4 rounded-full bg-white shadow transition-all ${on?'left-[18px]':'left-[2px]'}"></i></button>`;
+}
+function tableHead(cols){
+  return `<div class="hidden md:flex items-center gap-3 px-4 h-9 bg-canvas border-b border-line text-[11px] font-semibold uppercase tracking-[.09em] text-faint">
+    ${cols.map(c=>`<span class="${c[1]}">${c[0]}</span>`).join('')}</div>`;
+}
+
+function adminPanel(){
+  switch(STATE.adminTab){
+    case 'agents': return card(`${cardHead('Agents & roles', btn('Invite agent','addAgent','brand','plus'))}
+      ${tableHead([['Agent','flex-1'],['Role','w-[130px]'],['Group','w-[160px]'],['Tickets','w-[70px] text-right'],['Active','w-[60px] text-right']])}
+      ${DB.agents.map(a=>`<div class="flex flex-wrap md:flex-nowrap items-center gap-3 px-4 py-2.5 border-b border-line last:border-0">
+        <span class="flex items-center gap-2.5 flex-1 min-w-0">${avatar(a.id,30)}
+          <span class="min-w-0"><span class="block text-[13px] font-medium text-ink truncate">${esc(a.name)}</span>
+          <span class="block text-[11.5px] text-faint truncate">${esc(a.email)}</span></span></span>
+        <span class="w-[130px] text-[12.5px] ${a.role==='Administrator'?'text-brand font-medium':'text-muted'}">${a.role}</span>
+        <span class="w-[160px] text-[12.5px] text-muted truncate">${esc(group(a.group).name)}</span>
+        <span class="w-[70px] text-right font-mono text-[12px] text-muted">${DB.tickets.filter(t=>t.agent===a.id&&isOpen(t)).length}</span>
+        <span class="w-[60px] flex justify-end">${toggle(a.active,'agent',a.id)}</span>
+      </div>`).join('')}`);
+    case 'groups': return card(`${cardHead('Groups', btn('New group','addGroup','brand','plus'))}
+      ${DB.groups.map(g=>`<div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-line last:border-0">
+        <div class="min-w-0 flex-1"><div class="text-[13px] font-medium text-ink">${esc(g.name)}</div>
+          <div class="text-[12px] text-muted">${esc(g.desc)}</div></div>
+        <div class="flex -space-x-1.5">${g.members.map(m=>avatar(m,26,'ring-2 ring-white')).join('')}</div>
+        <span class="text-[12px] text-muted w-[170px]">${esc(DB.hours.find(h=>h.id===g.hours).name)}</span>
+        <span class="font-mono text-[12px] text-muted w-[60px] text-right">${DB.tickets.filter(t=>t.group===g.id&&isOpen(t)).length} open</span>
+      </div>`).join('')}`);
+    case 'sla': return card(`${cardHead('SLA policies', btn('New policy','addSla','brand','plus'))}
+      ${tableHead([['Policy','flex-1'],['First response','w-[120px]'],['Resolution','w-[110px]'],['Clock','w-[130px]'],['On','w-[60px] text-right']])}
+      ${DB.slas.map(s=>`<div class="flex flex-wrap md:flex-nowrap items-center gap-3 px-4 py-2.5 border-b border-line last:border-0">
+        <div class="flex-1 min-w-0"><div class="text-[13px] font-medium text-ink">${esc(s.name)}</div>
+          <div class="text-[11.5px] text-faint">${esc(s.esc)}</div></div>
+        <span class="w-[120px] font-mono text-[12.5px] text-ink-500">${s.fr}</span>
+        <span class="w-[110px] font-mono text-[12.5px] text-ink-500">${s.res}</span>
+        <span class="w-[130px] text-[12.5px] text-muted">${s.hours}</span>
+        <span class="w-[60px] flex justify-end">${toggle(s.active,'sla',s.id)}</span>
+      </div>`).join('')}`);
+    case 'hours': return card(`${cardHead('Business hours', btn('Add calendar','addHours','brand','plus'))}
+      ${DB.hours.map(h=>`<div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-line last:border-0">
+        <div class="flex-1 min-w-0"><div class="text-[13px] font-medium text-ink">${esc(h.name)}</div>
+          <div class="text-[12px] text-muted font-mono">${h.tz}</div></div>
+        <span class="text-[12.5px] text-muted w-[110px]">${h.days}</span>
+        <span class="font-mono text-[12.5px] text-ink-500 w-[130px]">${h.time}</span>
+        <span class="text-[12.5px] text-muted w-[160px]">${h.holidays}</span>
+      </div>`).join('')}`);
+    case 'rules': return card(`${cardHead('Automations', btn('New rule','addRule','brand','plus'))}
+      ${DB.automations.map(r=>`<div class="flex flex-wrap items-start gap-3 px-4 py-3 border-b border-line last:border-0">
+        <span class="w-7 h-7 rounded-lg bg-canvas border border-line grid place-items-center text-signal shrink-0 mt-0.5">${icon('zap','w-3.5 h-3.5')}</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-[13px] font-medium text-ink">${esc(r.name)}</div>
+          <div class="text-[12px] text-muted mt-0.5"><span class="font-mono text-[11px] text-faint uppercase">when</span> ${esc(r.when)}
+            <span class="font-mono text-[11px] text-faint uppercase ml-1.5">if</span> ${esc(r.cond)}
+            <span class="font-mono text-[11px] text-faint uppercase ml-1.5">then</span> ${esc(r.then)}</div>
+        </div>
+        <span class="font-mono text-[11.5px] text-faint w-[90px] text-right">${r.runs.toLocaleString()} runs</span>
+        ${toggle(r.active,'rule',r.id)}
+      </div>`).join('')}`);
+    case 'fields': return card(`${cardHead('Ticket fields', btn('Add field','addField','brand','plus'))}
+      ${tableHead([['Field','flex-1'],['Type','w-[120px]'],['Required','w-[90px]'],['Agents','w-[80px]'],['Portal','w-[80px]']])}
+      ${DB.fields.map(f=>`<div class="flex flex-wrap md:flex-nowrap items-center gap-3 px-4 py-2.5 border-b border-line last:border-0">
+        <span class="flex-1 text-[13px] font-medium text-ink">${esc(f.label)}</span>
+        <span class="w-[120px] text-[12.5px] text-muted">${f.type}</span>
+        <span class="w-[90px] text-[12.5px] ${f.required?'text-ink':'text-faint'}">${f.required?'Required':'Optional'}</span>
+        <span class="w-[80px] text-brand">${f.agents?icon('check','w-4 h-4'):''}</span>
+        <span class="w-[80px] text-brand">${f.portal?icon('check','w-4 h-4'):''}</span>
+      </div>`).join('')}`);
+    case 'email': return card(`${cardHead('Email templates', btn('New template','addTemplate','brand','plus'))}
+      ${DB.templates.map(t=>`<div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-line last:border-0">
+        <span class="w-7 h-7 rounded-lg bg-canvas border border-line grid place-items-center text-muted shrink-0">${icon('mail','w-3.5 h-3.5')}</span>
+        <div class="flex-1 min-w-0"><div class="text-[13px] font-medium text-ink">${esc(t.name)}</div>
+          <div class="font-mono text-[11.5px] text-faint truncate">${esc(t.subject)}</div></div>
+        <span class="text-[12.5px] text-muted w-[150px]">${esc(t.trigger)}</span>
+        <span class="text-[12.5px] text-muted w-[90px]">To ${t.to}</span>
+        ${btn('Edit','editTemplate','ghost','edit')}
+      </div>`).join('')}`);
+  }
+}
+
+function viewAdmin(){
+  return `<div class="p-5 max-w-[1400px] mx-auto fade-in">
+    ${pageHead('Admin','Configuration for the whole service desk')}
+    <div class="grid lg:grid-cols-[210px_1fr] gap-4 items-start">
+      ${card(`<div class="p-2">${ADMIN_TABS.map(t=>`
+        <button data-admin="${t.id}" class="w-full flex items-center gap-2.5 h-9 px-2.5 rounded-lg text-[12.5px] font-medium transition
+          ${STATE.adminTab===t.id?'bg-ink text-white':'text-muted hover:bg-canvas hover:text-ink'}">
+          <span class="${STATE.adminTab===t.id?'text-brand-100':'text-faint'}">${icon(t.icon,'w-4 h-4')}</span>${t.label}</button>`).join('')}</div>`)}
+      <div>${adminPanel()}</div>
+    </div></div>`;
+}
+/* ============================================================
+   Overlays — toast, modal, form modal, palette
+   ============================================================ */
+function toast(msg, kind='ok'){
+  const tones = { ok:'bg-ink text-white', warn:'bg-signal text-white', bad:'bg-alert text-white' };
+  const el = document.createElement('div');
+  el.className = `pop-in flex items-center gap-2 h-10 px-3.5 rounded-xl shadow-pop text-[13px] font-medium ${tones[kind]}`;
+  el.innerHTML = `${icon(kind==='ok'?'check':'warn','w-4 h-4')}<span>${esc(msg)}</span>`;
+  $('#toastRoot').appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; el.style.transform='translateY(6px)'; setTimeout(()=>el.remove(),200); }, 2600);
+}
+
+function closeModal(){ $('#modalRoot').innerHTML = ''; }
+function openModal({ title, sub, body, footer, width='max-w-lg' }){
+  $('#modalRoot').innerHTML = `<div class="fixed inset-0 z-[80] flex items-start justify-center p-4 sm:p-8 overflow-y-auto">
+    <div data-action="closeModal" class="fixed inset-0 bg-ink/40 backdrop-blur-[2px]"></div>
+    <div role="dialog" aria-modal="true" class="relative w-full ${width} bg-white rounded-2xl shadow-pop pop-in my-auto">
+      <div class="flex items-start gap-3 px-5 py-4 border-b border-line">
+        <div class="flex-1"><h2 class="font-display text-[17px] font-semibold">${title}</h2>
+          ${sub?`<p class="text-[12.5px] text-muted mt-0.5">${sub}</p>`:''}</div>
+        <button data-action="closeModal" class="w-8 h-8 -mr-1 grid place-items-center rounded-lg text-faint hover:bg-canvas hover:text-ink" aria-label="Close">${icon('x')}</button>
+      </div>
+      <div class="px-5 py-4">${body}</div>
+      ${footer?`<div class="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-line bg-canvas rounded-b-2xl">${footer}</div>`:''}
+    </div></div>`;
+  const first = $('#modalRoot input, #modalRoot textarea, #modalRoot select');
+  if (first) setTimeout(()=>first.focus(),40);
+}
+
+const FORMS = {};
+function field(f){
+  const base = 'w-full h-9 px-2.5 rounded-lg border border-line bg-white text-[13px] text-ink placeholder:text-faint focus:border-brand';
+  let ctl;
+  if (f.type==='textarea') ctl = `<textarea name="${f.k}" rows="${f.rows||4}" placeholder="${esc(f.ph||'')}" class="w-full px-2.5 py-2 rounded-lg border border-line text-[13px] leading-relaxed placeholder:text-faint focus:border-brand">${esc(f.value||'')}</textarea>`;
+  else if (f.type==='select') ctl = `<select name="${f.k}" class="${base}">${f.opts.map(o=>{const [v,l]=Array.isArray(o)?o:[o,o];return `<option value="${esc(v)}" ${String(v)===String(f.value||'')?'selected':''}>${esc(l)}</option>`;}).join('')}</select>`;
+  else ctl = `<input name="${f.k}" type="${f.type||'text'}" value="${esc(f.value||'')}" placeholder="${esc(f.ph||'')}" class="${base}">`;
+  return `<div class="${f.half?'sm:col-span-1':'sm:col-span-2'}">
+    <label class="block text-[12px] font-medium text-ink-500 mb-1.5">${f.label}${f.required?'<span class="text-alert"> *</span>':''}</label>
+    ${ctl}${f.hint?`<p class="text-[11.5px] text-faint mt-1">${f.hint}</p>`:''}</div>`;
+}
+function formModal({ title, sub, fields, submit='Save', onSubmit, width='max-w-lg' }){
+  FORMS.current = onSubmit;
+  openModal({ title, sub, width,
+    body: `<form id="modalForm" class="grid sm:grid-cols-2 gap-3.5">${fields.map(field).join('')}</form>`,
+    footer: `<button data-action="closeModal" class="h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium text-ink-500 hover:bg-white">Cancel</button>
+             <button data-action="submitForm" class="h-9 px-3.5 rounded-lg bg-brand hover:bg-brand-600 text-white text-[13px] font-semibold">${submit}</button>` });
+}
+function readForm(){
+  const f = $('#modalForm'); if (!f) return {};
+  const o = {}; new FormData(f).forEach((v,k)=>o[k]=String(v).trim()); return o;
+}
+
+/* command palette */
+function openPalette(){
+  openModal({ title:'Jump to', sub:'Tickets, people, assets, articles and pages', width:'max-w-xl',
+    body:`<input id="paletteInput" placeholder="Type to search…" class="w-full h-10 px-3 rounded-lg border border-line text-[14px] mb-3 focus:border-brand">
+          <div id="paletteResults" class="max-h-[340px] overflow-y-auto -mx-1"></div>` });
+  paletteSearch('');
+  $('#paletteInput').addEventListener('input', e => paletteSearch(e.target.value));
+}
+function paletteSearch(q){
+  q = q.toLowerCase();
+  const hits = [];
+  NAV.forEach(n => { if (!q || n.label.toLowerCase().includes(q)) hits.push({ ic:n.icon, label:n.label, meta:'Page', act:['nav',n.view] }); });
+  DB.tickets.forEach(t => { if (q && (t.id+t.subject).toLowerCase().includes(q)) hits.push({ ic:'inbox', label:t.subject, meta:t.id+' · '+t.status, act:['ticket',t.id] }); });
+  DB.articles.forEach(a => { if (q && a.title.toLowerCase().includes(q)) hits.push({ ic:'book', label:a.title, meta:'Article · '+a.cat, act:['article',a.id] }); });
+  DB.assets.forEach(a => { if (q && (a.id+a.name+a.serial).toLowerCase().includes(q)) hits.push({ ic:'server', label:a.name, meta:a.id+' · '+a.model, act:['asset',a.id] }); });
+  DB.users.forEach(u => { if (q && u.name.toLowerCase().includes(q)) hits.push({ ic:'user', label:u.name, meta:u.dept+' · '+u.site, act:['user',u.id] }); });
+  const res = $('#paletteResults'); if (!res) return;
+  res.innerHTML = hits.length ? hits.slice(0,12).map(h=>`
+    <button data-palette='${JSON.stringify(h.act)}' class="w-full flex items-center gap-3 px-3 h-11 rounded-lg hover:bg-canvas text-left">
+      <span class="text-faint">${icon(h.ic,'w-4 h-4')}</span>
+      <span class="text-[13px] text-ink truncate flex-1">${esc(h.label)}</span>
+      <span class="font-mono text-[11px] text-faint shrink-0">${esc(h.meta)}</span></button>`).join('')
+    : `<p class="px-3 py-6 text-center text-[13px] text-muted">Nothing matches “${esc(q)}”.</p>`;
+}
+
+/* ============================================================
+   Ticket creation
+   ============================================================ */
+const SLA_HOURS = { Urgent:[0.25,4], High:[1,8], Medium:[4,48], Low:[8,120] };
+function createTicket({ subject, body, requester, priority='Medium', type='Incident', category='Software', source='Portal', group='g1', agentId=null, tags=[] }){
+  const kind = type==='Incident' ? 'INC' : 'SR';
+  const [fr,res] = SLA_HOURS[priority];
+  const created = new Date();
+  const t = mkTicket({ id:nextId(kind), subject, body, requester, agent:agentId, group, status:'New',
+    priority, type, category, source, created, frDue:ahead(fr), resDue:ahead(res), tags });
+  DB.tickets.unshift(t);
+  logActivity(`${t.id} created`, t.id);
+  return t;
+}
+function newTicketModal(){
+  formModal({ title:'New ticket', sub:'Raise on behalf of someone who called or walked up', width:'max-w-2xl',
+    fields:[
+      { k:'subject', label:'Subject', required:true, ph:'One line the requester would recognise' },
+      { k:'requester', label:'Requester', type:'select', half:true, opts:DB.users.map(u=>[u.id,`${u.name} — ${u.dept}`]) },
+      { k:'source', label:'Source', type:'select', half:true, opts:['Phone','Email','Chat','Walk-up','Portal'] },
+      { k:'type', label:'Type', type:'select', half:true, opts:['Incident','Service request'] },
+      { k:'category', label:'Category', type:'select', half:true, opts:['Network','Hardware','Software','Access','Email','Printing','Security','Facilities'] },
+      { k:'priority', label:'Priority', type:'select', half:true, opts:['Urgent','High','Medium','Low'], value:'Medium' },
+      { k:'group', label:'Group', type:'select', half:true, opts:DB.groups.map(g=>[g.id,g.name]) },
+      { k:'agent', label:'Assign to', type:'select', opts:[['','Leave unassigned'],...DB.agents.filter(a=>a.active).map(a=>[a.id,a.name])] },
+      { k:'body', label:'Description', type:'textarea', required:true, ph:'What happened, what they have already tried, and what good looks like.' }
+    ],
+    submit:'Create ticket',
+    onSubmit(v){
+      if (!v.subject || !v.body) return toast('Subject and description are needed','warn');
+      const t = createTicket({ ...v, agentId:v.agent||null });
+      closeModal(); go('ticket', t.id); toast(`${t.id} created`);
+    }});
+}
+
+/* ============================================================
+   Employee portal
+   ============================================================ */
+function portalHeader(){
+  const links = [['home','Home'],['catalog','Service catalog'],['kb','Knowledge'],['mytickets','My tickets']];
+  const open = DB.tickets.filter(t=>t.requester===STATE.requester && isOpen(t)).length;
+  return `<header class="bg-white border-b border-line sticky top-0 z-30">
+    <div class="max-w-[1120px] mx-auto px-5 h-16 flex items-center gap-6">
+      <button data-pnav="home" class="flex items-center gap-2.5 shrink-0">
+        <span class="w-7 h-7 rounded-md bg-ink grid place-items-center font-display font-bold text-[13px] text-white">NG</span>
+        <span class="font-display font-semibold text-[14px] hidden sm:block">TicketHub <span class="text-muted font-normal">Help</span></span>
+      </button>
+      <nav class="flex items-center gap-1 flex-1 overflow-x-auto">
+        ${links.map(([v,l])=>`<button data-pnav="${v}" class="h-8 px-2.5 rounded-lg text-[13px] font-medium whitespace-nowrap transition
+          ${STATE.route.view===v?'bg-canvas text-ink':'text-muted hover:text-ink'}">${l}${v==='mytickets'&&open?`<span class="ml-1 font-mono text-[11px] text-brand">${open}</span>`:''}</button>`).join('')}
+      </nav>
+      <button data-pnav="newticket" class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-ink hover:bg-ink-700 text-white text-[13px] font-semibold shrink-0">
+        ${icon('plus','w-4 h-4')}<span class="hidden sm:inline">New request</span></button>
+      <button data-action="userMenu" class="shrink-0">${avatar(STATE.requester,32)}</button>
+    </div></header>`;
+}
+
+function portalHome(){
+  const mine = DB.tickets.filter(t=>t.requester===STATE.requester && isOpen(t)).sort((a,b)=>b.updated-a.updated);
+  const popular = [...DB.articles].filter(a=>a.status==='Published').sort((a,b)=>b.views-a.views).slice(0,4);
+  const u = user(STATE.requester);
+  return `<div class="fade-in">
+    <section class="bg-ink text-white">
+      <div class="max-w-[1120px] mx-auto px-5 py-12">
+        <p class="text-[12px] uppercase tracking-[.16em] text-[#7C8698]">TicketHub service desk</p>
+        <h1 class="font-display text-[34px] sm:text-[40px] font-semibold leading-[1.1] mt-3 max-w-[15ch]">What do you need help with, ${esc(u.name.split(' ')[0])}?</h1>
+        <div class="relative mt-6 max-w-[560px]">
+          <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#7C8698]">${icon('search','w-[18px] h-[18px]')}</span>
+          <input id="portalSearch" placeholder="Search answers and services — try “vpn” or “laptop”"
+            class="w-full h-12 pl-11 pr-4 rounded-xl bg-white/[.08] border border-white/15 text-[14px] text-white placeholder:text-[#7C8698] focus:bg-white focus:text-ink focus:border-white outline-none transition">
+          <div id="portalResults" class="absolute left-0 right-0 top-14 bg-white rounded-xl shadow-pop border border-line overflow-hidden hidden z-20"></div>
+        </div>
+        <p class="text-[13px] text-[#7C8698] mt-3">Most password and VPN questions are answered in under a minute without raising a ticket.</p>
+      </div>
+    </section>
+    <div class="max-w-[1120px] mx-auto px-5 py-8 space-y-8">
+      <div class="grid sm:grid-cols-3 gap-3 -mt-14">
+        ${[['newticket','warn','Something is broken','Report a problem and we will pick it up straight away.'],
+           ['catalog','layers','Request something','Hardware, software, access, and onboarding.'],
+           ['mytickets','inbox','Track a request',`${mine.length} open right now.`]].map(([v,ic,t,d])=>`
+          <button data-pnav="${v}" class="text-left bg-white border border-line rounded-xl shadow-card p-4 hover:shadow-pop hover:border-brand-100 transition">
+            <span class="w-9 h-9 rounded-lg bg-brand-50 border border-brand-100 grid place-items-center text-brand">${icon(ic,'w-[18px] h-[18px]')}</span>
+            <h3 class="font-display text-[15px] font-semibold mt-3">${t}</h3>
+            <p class="text-[12.5px] text-muted mt-1 leading-relaxed">${d}</p></button>`).join('')}
+      </div>
+
+      ${DB.announcements.length?`<section>
+        <h2 class="font-display text-[16px] font-semibold mb-3">Service notices</h2>
+        <div class="space-y-2">${DB.announcements.slice(0,2).map(a=>`
+          <div class="flex gap-3 bg-white border border-line rounded-xl p-4">
+            <span class="w-1 rounded-full shrink-0 ${a.level==='alert'?'bg-alert':a.level==='warn'?'bg-signal':'bg-brand'}"></span>
+            <div><h3 class="text-[13.5px] font-semibold">${esc(a.title)}</h3>
+              <p class="text-[13px] text-muted mt-1 leading-relaxed">${esc(a.body)}</p>
+              <p class="text-[11.5px] text-faint mt-2">${relTime(a.at)}</p></div></div>`).join('')}</div></section>`:''}
+
+      ${mine.length?`<section>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-display text-[16px] font-semibold">Your open requests</h2>
+          <button data-pnav="mytickets" class="text-[12.5px] text-brand font-medium hover:underline">See all</button></div>
+        <div class="bg-white border border-line rounded-xl overflow-hidden">${mine.slice(0,3).map(portalRow).join('')}</div></section>`:''}
+
+      <section>
+        <h2 class="font-display text-[16px] font-semibold mb-3">Answers people use most</h2>
+        <div class="grid sm:grid-cols-2 gap-3">${popular.map(a=>`
+          <button data-particle="${a.id}" class="text-left bg-white border border-line rounded-xl p-4 hover:border-brand-100 transition">
+            <span class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint">${esc(a.cat)}</span>
+            <h3 class="font-display text-[14.5px] font-semibold mt-1.5 leading-snug">${esc(a.title)}</h3>
+            <p class="font-mono text-[11.5px] text-faint mt-2">${a.up} people found this helpful</p></button>`).join('')}</div>
+      </section>
+    </div>
+    <footer class="border-t border-line mt-10">
+      <div class="max-w-[1120px] mx-auto px-5 py-6 flex flex-wrap gap-x-6 gap-y-2 text-[12.5px] text-muted">
+        <span>Service desk · ext. 4400</span><span>Open 08:00–18:00 ET, Mon–Fri</span>
+        <span>Urgent outage outside hours? Call the on-call line.</span>
+      </div></footer>
+  </div>`;
+}
+
+function portalRow(t){
+  const s = sla(t);
+  const waiting = t.status==='Pending';
+  return `<button data-pticket="${t.id}" class="w-full flex items-center gap-3 px-4 py-3 border-b border-line last:border-0 row-hover text-left">
+    <i class="led ${PRIORITY[t.priority].dot}"></i>
+    <span class="min-w-0 flex-1">
+      <span class="block text-[13.5px] font-medium text-ink truncate">${esc(t.subject)}</span>
+      <span class="block text-[11.5px] text-faint mt-0.5 font-mono">${t.id} · opened ${relTime(t.created)}${t.agent?` · with ${esc(agent(t.agent).name.split(' ')[0])}`:''}</span>
+    </span>
+    ${waiting?`<span class="hidden sm:inline-flex items-center h-[22px] px-2 rounded-md bg-signal-50 border border-signal-100 text-signal text-[11px] font-semibold">Needs your reply</span>`:''}
+    ${statusChip(t.status)}
+    <span class="text-faint">${icon('right','w-4 h-4')}</span>
+  </button>`;
+}
+
+function portalMyTickets(){
+  const all = DB.tickets.filter(t=>t.requester===STATE.requester);
+  const open = all.filter(isOpen).sort((a,b)=>b.updated-a.updated);
+  const done = all.filter(t=>!isOpen(t)).sort((a,b)=>b.updated-a.updated);
+  const list = STATE.portalTab==='open' ? open : done;
+  return `<div class="max-w-[1120px] mx-auto px-5 py-8 fade-in">
+    <h1 class="font-display text-[24px] font-semibold">My tickets</h1>
+    <p class="text-[13px] text-muted mt-1">Everything you have raised, and where it stands.</p>
+    <div class="flex gap-1 mt-5 mb-3">
+      ${[['open',`Open (${open.length})`],['closed',`Resolved (${done.length})`]].map(([v,l])=>`
+        <button data-ptab="${v}" class="h-8 px-3 rounded-lg text-[12.5px] font-medium ${STATE.portalTab===v?'bg-ink text-white':'text-muted hover:bg-white'}">${l}</button>`).join('')}
+    </div>
+    <div class="bg-white border border-line rounded-xl overflow-hidden">
+      ${list.length?list.map(portalRow).join(''):emptyState('inbox','Nothing here yet','When you raise a request it will show up here with every update.',
+        `<button data-pnav="newticket" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-brand text-white text-[13px] font-semibold">${icon('plus','w-4 h-4')}New request</button>`)}
+    </div></div>`;
+}
+
+function portalTicket(id){
+  const t = ticket(id);
+  if (!t) return `<div class="max-w-[760px] mx-auto p-8">${emptyState('inbox','Ticket not found','It may have been merged into another request.')}</div>`;
+  const pub = t.conv.filter(c=>c.kind!=='note');
+  const s = sla(t);
+  return `<div class="max-w-[820px] mx-auto px-5 py-8 fade-in">
+    <button data-pnav="mytickets" class="inline-flex items-center gap-1 text-[12.5px] text-muted hover:text-ink mb-4">${icon('back','w-3.5 h-3.5')} My tickets</button>
+    <div class="bg-white border border-line rounded-xl shadow-card p-5">
+      <div class="flex flex-wrap items-center gap-2 mb-2">
+        <span class="font-mono text-[12px] text-faint">${t.id}</span>${statusChip(t.status)}
+        <span class="text-[12px] text-muted">${esc(t.type)} · ${esc(t.category)}</span>
+      </div>
+      <h1 class="font-display text-[22px] font-semibold leading-snug">${esc(t.subject)}</h1>
+      <div class="grid sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-line">
+        <div><div class="text-[11px] uppercase tracking-[.09em] text-faint">Opened</div>
+          <div class="text-[13px] text-ink-500 mt-0.5">${fmtDate(t.created)}</div></div>
+        <div><div class="text-[11px] uppercase tracking-[.09em] text-faint">Handled by</div>
+          <div class="text-[13px] text-ink-500 mt-0.5 flex items-center gap-1.5">${t.agent?avatar(t.agent,20)+esc(agent(t.agent).name):'Being assigned'}</div></div>
+        <div><div class="text-[11px] uppercase tracking-[.09em] text-faint">${isOpen(t)?'We aim to resolve by':'Resolved'}</div>
+          <div class="text-[13px] mt-0.5 ${isOpen(t)&&s.remaining<0?'text-alert':'text-ink-500'}">${isOpen(t)?fmtDate(t.resDue):fmtDate(t.resolvedAt||t.updated)}</div></div>
+      </div>
+    </div>
+
+    ${!isOpen(t) && !t.csat ? `<div class="mt-4 bg-white border border-brand-100 rounded-xl p-5">
+      <h2 class="font-display text-[15px] font-semibold">How did we do?</h2>
+      <p class="text-[13px] text-muted mt-1">One tap. It helps us fix the parts that keep going wrong.</p>
+      <div class="flex gap-1.5 mt-3">${[1,2,3,4,5].map(n=>`
+        <button data-rate="${n}" data-id="${t.id}" class="w-10 h-10 rounded-lg border border-line grid place-items-center text-line hover:text-signal-400 hover:border-signal-100 transition" aria-label="${n} out of 5">
+          ${icon('star','w-5 h-5 fill-current')}</button>`).join('')}</div></div>` : ''}
+    ${t.csat ? `<div class="mt-4 bg-brand-50 border border-brand-100 rounded-xl p-4 flex items-center gap-3">
+      <div class="flex gap-0.5 text-signal-400">${Array.from({length:5},(_,i)=>icon('star',`w-4 h-4 ${i<t.csat.score?'fill-current':'text-brand-100 fill-current'}`)).join('')}</div>
+      <span class="text-[13px] text-ink-500">Thanks for rating this ${t.csat.score} out of 5.</span></div>` : ''}
+
+    <div class="mt-4 space-y-3">${pub.map((c,i)=>convEntry(t,c,i)).join('')}</div>
+
+    ${isOpen(t)?`<div class="mt-4 bg-white border border-line rounded-xl shadow-card p-4">
+      <label class="block text-[12.5px] font-medium text-ink-500 mb-2">Add to this request</label>
+      <textarea id="portalReply" rows="4" placeholder="Anything new — an error message, a screenshot, or a nudge if it is now urgent."
+        class="w-full px-3 py-2.5 rounded-lg border border-line text-[13.5px] leading-relaxed placeholder:text-faint focus:border-brand"></textarea>
+      <div class="flex items-center gap-2 mt-2">
+        <button data-action="attach" class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-line text-[12.5px] text-muted hover:bg-canvas">${icon('clip','w-3.5 h-3.5')}Attach</button>
+        <div class="flex-1"></div>
+        <button data-action="portalSend" data-id="${t.id}" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-brand hover:bg-brand-600 text-white text-[13px] font-semibold">${icon('send','w-3.5 h-3.5')}Send</button>
+      </div></div>`:`
+      <div class="mt-4 rounded-xl border border-line bg-white p-4 text-[13px] text-muted">
+        This ticket is ${t.status.toLowerCase()}. Replying reopens it for five days — after that, raise a new request.
+        <button data-pnav="newticket" class="text-brand font-medium hover:underline ml-1">Raise a new request</button>
+      </div>`}
+  </div>`;
+}
+
+function portalNewTicket(){
+  return `<div class="max-w-[720px] mx-auto px-5 py-8 fade-in">
+    <button data-pnav="home" class="inline-flex items-center gap-1 text-[12.5px] text-muted hover:text-ink mb-4">${icon('back','w-3.5 h-3.5')} Home</button>
+    <h1 class="font-display text-[24px] font-semibold">Report a problem</h1>
+    <p class="text-[13px] text-muted mt-1">Tell us what is not working. The more specific the first message, the fewer rounds it takes.</p>
+    <form id="portalForm" class="bg-white border border-line rounded-xl shadow-card p-5 mt-5 grid sm:grid-cols-2 gap-4">
+      ${field({ k:'subject', label:'What is happening?', required:true, ph:'e.g. Cannot connect to VPN from home' })}
+      ${field({ k:'category', label:'Area', type:'select', half:true, opts:['Network','Hardware','Software','Access','Email','Printing','Security','Facilities'] })}
+      ${field({ k:'priority', label:'How much is it blocking you?', type:'select', half:true, value:'Medium',
+        opts:[['Low','I can work around it'],['Medium','Slowing me down'],['High','I am blocked'],['Urgent','My whole team is blocked']] })}
+      ${field({ k:'body', label:'Details', type:'textarea', rows:6, required:true, ph:'When it started, what you have tried, the exact error text, and whether anyone else is affected.' })}
+      <div class="sm:col-span-2 flex flex-wrap items-center gap-2 pt-1">
+        <button type="button" data-action="attach" class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-line text-[12.5px] text-muted hover:bg-canvas">${icon('clip','w-3.5 h-3.5')}Attach a screenshot</button>
+        <div class="flex-1"></div>
+        <button type="button" data-pnav="home" class="h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium text-ink-500 hover:bg-canvas">Cancel</button>
+        <button type="button" data-action="portalSubmit" class="h-9 px-4 rounded-lg bg-brand hover:bg-brand-600 text-white text-[13px] font-semibold">Send to the service desk</button>
+      </div>
+    </form>
+    <p class="text-[12.5px] text-muted mt-4">Before you send — <button data-pnav="kb" class="text-brand font-medium hover:underline">check the knowledge base</button>. Password, VPN, and printing questions usually have an answer there.</p>
+  </div>`;
+}
+
+function portalCatalog(){
+  return `<div class="max-w-[1120px] mx-auto px-5 py-8 fade-in">
+    <h1 class="font-display text-[24px] font-semibold">Service catalog</h1>
+    <p class="text-[13px] text-muted mt-1 mb-5">Request equipment, software, and access. Each item shows how long it takes and who needs to approve it.</p>
+    ${catalogGrid(false)}</div>`;
+}
+
+function portalKB(){
+  const cats = ['All', ...new Set(DB.articles.filter(a=>a.status==='Published').map(a=>a.cat))];
+  const list = DB.articles.filter(a=>a.status==='Published' && (STATE.kbCat==='All'||a.cat===STATE.kbCat));
+  return `<div class="max-w-[1120px] mx-auto px-5 py-8 fade-in">
+    <h1 class="font-display text-[24px] font-semibold">Knowledge base</h1>
+    <p class="text-[13px] text-muted mt-1 mb-5">Step-by-step answers, written by the people who fix these things.</p>
+    <div class="flex flex-wrap gap-1.5 mb-4">${cats.map(c=>`
+      <button data-kbcat="${esc(c)}" class="h-8 px-3 rounded-lg text-[12.5px] font-medium border transition
+        ${STATE.kbCat===c?'bg-ink text-white border-ink':'bg-white text-muted border-line hover:text-ink'}">${esc(c)}</button>`).join('')}</div>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${list.map(a=>`
+      <button data-particle="${a.id}" class="text-left bg-white border border-line rounded-xl shadow-card p-4 hover:border-brand-100 transition">
+        <span class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint">${esc(a.cat)}</span>
+        <h3 class="font-display text-[15px] font-semibold mt-1.5 leading-snug">${esc(a.title)}</h3>
+        <p class="font-mono text-[11.5px] text-faint mt-2">${a.views.toLocaleString()} views · ${a.up} helpful</p></button>`).join('')}</div></div>`;
+}
+
+function portalArticle(id){
+  const a = article(id);
+  if (!a) return `<div class="max-w-[760px] mx-auto p-8">${emptyState('book','Article not found','Try searching the knowledge base.')}</div>`;
+  return `<div class="max-w-[760px] mx-auto px-5 py-8 fade-in">
+    <button data-pnav="kb" class="inline-flex items-center gap-1 text-[12.5px] text-muted hover:text-ink mb-4">${icon('back','w-3.5 h-3.5')} Knowledge base</button>
+    <article class="bg-white border border-line rounded-xl shadow-card p-6">
+      <div class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint">${esc(a.cat)}</div>
+      <h1 class="font-display text-[26px] font-semibold leading-tight mt-1.5">${esc(a.title)}</h1>
+      <p class="text-[12.5px] text-faint mt-2">Updated ${relTime(a.updated)} by ${esc(person(a.author).name)}</p>
+      <div class="prose-kb mt-5 text-[14.5px]">${a.body}</div>
+      <div class="mt-7 pt-4 border-t border-line flex flex-wrap items-center gap-3">
+        <span class="text-[13px] text-muted">Did this solve it?</span>
+        <button data-vote="up" data-id="${a.id}" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] hover:bg-brand-50 hover:border-brand-100 hover:text-brand">${icon('check','w-4 h-4')} Yes</button>
+        <button data-vote="down" data-id="${a.id}" class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-line text-[13px] hover:bg-alert-50 hover:border-alert-100 hover:text-alert">${icon('x','w-4 h-4')} Not quite</button>
+        <button data-pnav="newticket" class="ml-auto text-[13px] text-brand font-medium hover:underline">Still stuck? Raise a ticket</button>
+      </div>
+    </article></div>`;
+}
+
+function catalogRequestModal(itemId, onBehalf){
+  const it = DB.catalog.find(c=>c.id===itemId);
+  const fields = [
+    ...(onBehalf ? [{ k:'requester', label:'Requesting for', type:'select', opts:DB.users.map(u=>[u.id,`${u.name} — ${u.dept}`]) }] : []),
+    ...it.fields.map(f=>({ k:f.k, label:f.label, type:f.type, opts:f.opts, half:f.type!=='textarea' })),
+    { k:'notes', label:'Anything else we should know?', type:'textarea', rows:3, ph:'Optional' }
+  ];
+  formModal({ title:it.name, sub:`${it.sla} · ${it.approval==='None'?'No approval needed':it.approval+' approval required'}`,
+    fields, submit:'Submit request', width:'max-w-xl',
+    onSubmit(v){
+      const requester = onBehalf ? v.requester : STATE.requester;
+      const detail = it.fields.map(f=>`${f.label}: ${v[f.k]||'—'}`).join('\n') + (v.notes?`\n\nNotes: ${v.notes}`:'');
+      const t = createTicket({ subject:it.name, body:detail, requester, type:'Service request',
+        category:it.cat==='Accounts & access'?'Access':it.cat==='Onboarding'?'Access':it.cat, priority:'Medium', source:'Portal', tags:[it.id] });
+      if (it.approval !== 'None'){ t.status='Pending'; addSystemNote(t, `Waiting on ${it.approval} approval`); }
+      closeModal();
+      if (onBehalf){ go('ticket', t.id); toast(`${t.id} raised for ${person(requester).name.split(' ')[0]}`); }
+      else { go('pticket', t.id); toast(`Request sent — ${t.id}`); }
+    }});
+}
+/* ============================================================
+   Render + routing
+   ============================================================ */
+function agentView(){
+  const { view, id } = STATE.route;
+  switch(view){
+    case 'dashboard': return viewDashboard();
+    case 'tickets':   return viewTickets();
+    case 'ticket':    return viewTicket(id);
+    case 'problems':  return viewProblems();
+    case 'changes':   return viewChanges();
+    case 'assets':    return viewAssets();
+    case 'catalog':   return viewCatalog();
+    case 'kb':        return viewKB();
+    case 'article':   return viewArticle(id);
+    case 'reports':   return viewReports();
+    case 'admin':     return viewAdmin();
+    default:          return viewDashboard();
+  }
+}
+function portalView(){
+  const { view, id } = STATE.route;
+  switch(view){
+    case 'home':      return portalHome();
+    case 'catalog':   return portalCatalog();
+    case 'kb':        return portalKB();
+    case 'article':   return portalArticle(id);
+    case 'newticket': return portalNewTicket();
+    case 'mytickets': return portalMyTickets();
+    case 'pticket':   return portalTicket(id);
+    default:          return portalHome();
+  }
+}
+function render(){
+  const app = $('#app');
+  if (STATE.mode === 'agent'){
+    app.innerHTML = `<div class="h-full flex">
+      ${sidebar()}
+      <div id="navScrim" class="hidden fixed inset-0 bg-ink/40 z-30 lg:hidden"></div>
+      <div class="flex-1 flex flex-col min-w-0">
+        ${topbar()}
+        <main id="view" class="flex-1 overflow-y-auto">${agentView()}</main>
+      </div></div>`;
+    if (STATE.route.view === 'tickets') renderTicketList();
+  } else {
+    app.innerHTML = `<div class="min-h-full flex flex-col bg-canvas">
+      ${portalHeader()}
+      <main id="view" class="flex-1">${portalView()}</main></div>`;
+  }
+}
+function parseHash(){
+  const p = location.hash.replace(/^#\//,'').split('/');
+  const mode = p[0]==='portal' ? 'portal' : 'agent';
+  return { mode, view: p[1] || (mode==='agent'?'dashboard':'home'), id: p[2] || null };
+}
+
+/* ============================================================
+   Actions
+   ============================================================ */
+function assetModal(id){
+  const a = asset(id);
+  const rel = DB.tickets.filter(t=>t.assets.includes(id));
+  openModal({ title:a.name, sub:`${a.id} · ${a.model}`, width:'max-w-lg',
+    body:`<dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
+        ${[['Type',a.type],['Serial',a.serial],['Operating system',a.os],['Site',a.site],
+           ['Assigned to',a.user?person(a.user).name:'Unassigned'],['Status',a.status],
+           ['Warranty ends',fmtDay(a.warranty)],['Warranty state', a.warranty<NOW?'Expired':durLabel(a.warranty-NOW)+' left']]
+          .map(([k,v])=>`<div><dt class="text-[11px] uppercase tracking-[.09em] text-faint">${k}</dt>
+            <dd class="text-ink-500 mt-0.5 ${k==='Serial'?'font-mono text-[12px]':''}">${esc(String(v))}</dd></div>`).join('')}
+      </dl>
+      <div class="mt-4 pt-4 border-t border-line">
+        <h3 class="text-[12px] font-semibold uppercase tracking-[.09em] text-faint mb-2">Linked tickets</h3>
+        ${rel.length?rel.map(t=>`<button data-open="${t.id}" class="w-full flex items-center gap-2 py-1.5 text-left hover:text-brand">
+            <i class="led ${PRIORITY[t.priority].dot}"></i><span class="font-mono text-[11.5px] text-faint">${t.id}</span>
+            <span class="text-[13px] truncate">${esc(t.subject)}</span></button>`).join('')
+          :'<p class="text-[13px] text-muted">No tickets reference this asset.</p>'}
+      </div>`,
+    footer:`<button data-action="closeModal" class="h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium hover:bg-white">Close</button>
+            <button data-action="assetTicket" data-id="${a.id}" class="h-9 px-3.5 rounded-lg bg-ink text-white text-[13px] font-semibold">Raise a ticket for this</button>` });
+}
+
+function userMenuModal(){
+  openModal({ title:'Workspace', sub:'This prototype ships both sides of the product', width:'max-w-md',
+    body:`<div class="grid grid-cols-2 gap-2.5 mb-4">
+        ${[['agent','grid','Agent workspace','Queues, SLAs, admin'],['portal','user','Employee portal','Self-service for staff']].map(([m,ic,t,d])=>`
+        <button data-mode="${m}" class="text-left p-3 rounded-xl border transition ${STATE.mode===m?'border-brand bg-brand-50':'border-line hover:border-[#CBD1DC]'}">
+          <span class="${STATE.mode===m?'text-brand':'text-faint'}">${icon(ic,'w-4 h-4')}</span>
+          <span class="block text-[13px] font-semibold mt-2">${t}</span>
+          <span class="block text-[11.5px] text-muted mt-0.5">${d}</span></button>`).join('')}
+      </div>
+      <label class="block text-[12px] font-medium text-ink-500 mb-1.5">Signed in as agent</label>
+      <select data-action="setAgent" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] mb-3">
+        ${DB.agents.map(a=>`<option value="${a.id}" ${a.id===STATE.me?'selected':''}>${a.name} — ${a.role}</option>`).join('')}</select>
+      <label class="block text-[12px] font-medium text-ink-500 mb-1.5">Portal visitor</label>
+      <select data-action="setRequester" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px]">
+        ${DB.users.map(u=>`<option value="${u.id}" ${u.id===STATE.requester?'selected':''}>${u.name} — ${u.dept}</option>`).join('')}</select>`,
+    footer:`<button data-action="signOut" class="h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium text-muted hover:bg-white">Sign out</button>
+            <button data-action="closeModal" class="h-9 px-3.5 rounded-lg bg-ink text-white text-[13px] font-semibold">Done</button>` });
+}
+
+function notificationsModal(){
+  const overdue = DB.tickets.filter(t=>isOpen(t)&&sla(t).remaining<=0);
+  const approvals = DB.changes.filter(c=>c.state==='Awaiting approval');
+  const mentions = DB.tickets.filter(t=>t.agent===STATE.me&&t.status==='Pending');
+  const row = (ic,tone,title,sub,act) => `<button ${act?`data-open="${act}"`:''} class="w-full flex gap-3 p-3 rounded-lg hover:bg-canvas text-left">
+    <span class="w-7 h-7 rounded-lg grid place-items-center shrink-0 ${tone}">${icon(ic,'w-3.5 h-3.5')}</span>
+    <span class="min-w-0"><span class="block text-[13px] font-medium text-ink">${esc(title)}</span>
+    <span class="block text-[12px] text-muted truncate">${esc(sub)}</span></span></button>`;
+  openModal({ title:'Notifications', sub:'What needs you next', width:'max-w-md',
+    body:`<div class="-mx-2">
+      ${overdue.map(t=>row('warn','bg-alert-50 text-alert','SLA breached',`${t.id} · ${t.subject}`,t.id)).join('')}
+      ${mentions.map(t=>row('clock','bg-signal-50 text-signal','Pending your follow-up',`${t.id} · ${t.subject}`,t.id)).join('')}
+      ${approvals.map(c=>row('branch','bg-violet-50 text-violet','Change awaiting approval',`${c.id} · ${c.title}`)).join('')}
+      ${DB.announcements.slice(0,1).map(a=>row('bell','bg-canvas text-muted',a.title,relTime(a.at))).join('')}
+    </div>` });
+}
+
+function requesterHistoryModal(uid){
+  const list = DB.tickets.filter(t=>t.requester===uid).sort((a,b)=>b.created-a.created);
+  openModal({ title:`${person(uid).name}'s tickets`, sub:`${list.length} in total`, width:'max-w-lg',
+    body:`<div class="-mx-2 max-h-[420px] overflow-y-auto">${list.map(t=>`
+      <button data-open="${t.id}" class="w-full flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-canvas text-left">
+        <i class="led ${PRIORITY[t.priority].dot}"></i>
+        <span class="font-mono text-[11px] text-faint w-[68px]">${t.id}</span>
+        <span class="text-[13px] truncate flex-1">${esc(t.subject)}</span>
+        ${statusChip(t.status)}</button>`).join('')}</div>` });
+}
+
+function rowMenu(id){
+  const t = ticket(id);
+  const item = (label, action, ic, tone='text-ink-500') => `<button data-action="${action}" data-id="${id}"
+    class="w-full flex items-center gap-2.5 h-9 px-2.5 rounded-lg hover:bg-canvas text-[13px] ${tone}">${icon(ic,'w-4 h-4 text-faint')}${label}</button>`;
+  openModal({ title:t.id, sub:t.subject, width:'max-w-xs',
+    body:`<div class="-mx-2">
+      ${item('Open ticket','openTicket','ext')}
+      ${item('Assign to me','claim','user')}
+      ${item(isOpen(t)?'Mark resolved':'Reopen', isOpen(t)?'quickResolve':'quickReopen','check')}
+      ${item('Escalate','quickEscalate','warn')}
+      ${item('Delete','quickDelete','trash','text-alert')}
+    </div>` });
+}
+
+function doAction(action, el){
+  const t = STATE.route.view==='ticket' ? ticket(STATE.route.id) : null;
+  const id = el?.dataset.id;
+  switch(action){
+    case 'closeModal': closeModal(); break;
+    case 'palette': openPalette(); break;
+    case 'newTicket': newTicketModal(); break;
+    case 'notifications': notificationsModal(); break;
+    case 'userMenu': userMenuModal(); break;
+    case 'signOut': closeModal(); toast('Sign-out is disabled in this prototype','warn'); break;
+    case 'openNav': $('#sidebar').classList.remove('-translate-x-full'); $('#navScrim').classList.remove('hidden'); break;
+    case 'closeNav': $('#sidebar').classList.add('-translate-x-full'); $('#navScrim').classList.add('hidden'); break;
+    case 'refresh': render(); toast('Queue refreshed'); break;
+    case 'export': toast('CSV export queued — you will get an email'); break;
+    case 'allTickets': STATE.savedView='all'; go('tickets'); break;
+    case 'viewUnassigned': STATE.savedView='unassigned'; go('tickets'); break;
+    case 'viewOverdue': STATE.savedView='overdue'; go('tickets'); break;
+    case 'clearFilters': STATE.filters={ q:'',status:'',priority:'',agent:'',group:'',type:'',sort:'sla' }; STATE.savedView='all'; render(); break;
+    case 'clearSelection': STATE.selection.clear(); render(); break;
+    case 'backKB': go('kb'); break;
+    case 'attach': toast('File picker is disabled in this prototype','warn'); break;
+    case 'submitForm': { const fn = FORMS.current; if (fn) fn(readForm()); break; }
+
+    /* composer */
+    case 'send': sendReply(); break;
+    case 'portalSend': portalSend(id); break;
+    case 'portalSubmit': portalSubmit(); break;
+
+    /* ticket actions */
+    case 'resolveTicket': t.status='Resolved'; t.resolvedAt=new Date(); addSystemNote(t,'Status changed to Resolved'); render(); toast(`${t.id} resolved`); break;
+    case 'reopenTicket': t.status='Open'; t.resolvedAt=null; addSystemNote(t,'Ticket reopened'); render(); toast(`${t.id} reopened`); break;
+    case 'escalate': t.escalated=true; t.priority = t.priority==='Urgent'?'Urgent':'High'; addSystemNote(t,`Escalated to ${t.priority} priority`); render(); toast('Escalated — supervisor notified','warn'); break;
+    case 'deleteTicket': confirmModal('Delete this ticket?', `${t.id} and its ${t.conv.length} messages will be removed. Requesters are not notified.`, 'Delete', ()=>{
+        DB.tickets = DB.tickets.filter(x=>x.id!==t.id); closeModal(); go('tickets'); toast(`${t.id} deleted`,'bad'); }); break;
+    case 'mergeTicket': mergeModal(t.id); break;
+    case 'addTask': formModal({ title:'Add task', fields:[
+        { k:'t', label:'What needs doing?', required:true, ph:'e.g. Order replacement fuser' },
+        { k:'who', label:'Owner', type:'select', opts:[['','Nobody yet'],...DB.agents.filter(a=>a.active).map(a=>[a.id,a.name])] }],
+        submit:'Add task', onSubmit(v){ if(!v.t) return toast('Give the task a name','warn'); t.tasks.push({ t:v.t, done:false, who:v.who||null }); closeModal(); render(); toast('Task added'); } }); break;
+    case 'addTag': formModal({ title:'Add tag', fields:[{ k:'tag', label:'Tag', required:true, ph:'lowercase, no spaces' }],
+        submit:'Add tag', onSubmit(v){ if(!v.tag) return; t.tags.push(v.tag.toLowerCase().replace(/\s+/g,'-')); closeModal(); render(); toast('Tag added'); } }); break;
+    case 'linkAsset': formModal({ title:'Link an asset', fields:[{ k:'a', label:'Asset', type:'select', opts:DB.assets.map(a=>[a.id,`${a.name} — ${a.id}`]) }],
+        submit:'Link asset', onSubmit(v){ if(!t.assets.includes(v.a)) t.assets.push(v.a); closeModal(); render(); toast('Asset linked'); } }); break;
+    case 'requesterHistory': requesterHistoryModal(t.requester); break;
+    case 'assetTicket': { const a=asset(id); closeModal(); const nt=createTicket({ subject:`Issue with ${a.name}`, body:`Raised from asset record ${a.id} (${a.model}, serial ${a.serial}).`,
+        requester:a.user||'u1', type:'Incident', category:'Hardware', priority:'Medium', source:'Walk-up' }); nt.assets.push(a.id); go('ticket',nt.id); toast(`${nt.id} created`); break; }
+
+    /* row menu */
+    case 'openTicket': closeModal(); go('ticket', id); break;
+    case 'claim': { const x=ticket(id); x.agent=STATE.me; addSystemNote(x,`Assigned to ${agent(STATE.me).name}`); closeModal(); render(); toast(`${id} is yours`); break; }
+    case 'quickResolve': { const x=ticket(id); x.status='Resolved'; x.resolvedAt=new Date(); addSystemNote(x,'Status changed to Resolved'); closeModal(); render(); toast(`${id} resolved`); break; }
+    case 'quickReopen': { const x=ticket(id); x.status='Open'; x.resolvedAt=null; addSystemNote(x,'Ticket reopened'); closeModal(); render(); toast(`${id} reopened`); break; }
+    case 'quickEscalate': { const x=ticket(id); x.escalated=true; closeModal(); render(); toast(`${id} escalated`,'warn'); break; }
+    case 'quickDelete': DB.tickets = DB.tickets.filter(x=>x.id!==id); closeModal(); render(); toast(`${id} deleted`,'bad'); break;
+
+    /* bulk */
+    case 'bulkDelete': confirmModal('Delete selected tickets?', `${STATE.selection.size} tickets will be removed.`, 'Delete', ()=>{
+        DB.tickets = DB.tickets.filter(x=>!STATE.selection.has(x.id)); const n=STATE.selection.size; STATE.selection.clear(); closeModal(); render(); toast(`${n} tickets deleted`,'bad'); }); break;
+    case 'bulkMerge': { const ids=[...STATE.selection]; if(ids.length<2) return toast('Select at least two tickets to merge','warn');
+        const target=ticket(ids[0]); ids.slice(1).forEach(i=>{ const s=ticket(i); target.conv.push(...s.conv.filter(c=>c.kind!=='description')); DB.tickets=DB.tickets.filter(x=>x.id!==i); });
+        addSystemNote(target, `Merged ${ids.length-1} ticket(s) into this one`); STATE.selection.clear(); render(); toast(`Merged into ${target.id}`); break; }
+
+    /* creation shortcuts */
+    case 'newAnnouncement': formModal({ title:'Post an announcement', fields:[
+        { k:'title', label:'Headline', required:true }, { k:'level', label:'Severity', type:'select', half:true, opts:[['info','Information'],['warn','Warning'],['alert','Urgent']] },
+        { k:'body', label:'Message', type:'textarea', required:true, ph:'What is happening, who it affects, and what people should do.' }],
+        submit:'Post', onSubmit(v){ if(!v.title||!v.body) return toast('Headline and message are needed','warn');
+          DB.announcements.unshift({ id:'an'+Date.now(), title:v.title, body:v.body, by:STATE.me, at:new Date(), level:v.level }); closeModal(); render(); toast('Announcement posted'); } }); break;
+    case 'newArticle': formModal({ title:'New article', width:'max-w-xl', fields:[
+        { k:'title', label:'Title', required:true, ph:'Write it as the question people ask' },
+        { k:'cat', label:'Category', type:'select', half:true, opts:[...new Set(DB.articles.map(a=>a.cat))] },
+        { k:'status', label:'Status', type:'select', half:true, opts:['Draft','Published'] },
+        { k:'body', label:'Body', type:'textarea', rows:7, required:true, ph:'Steps, in the order someone would take them.' }],
+        submit:'Save article', onSubmit(v){ if(!v.title) return toast('Give it a title','warn');
+          DB.articles.unshift({ id:'kb'+Date.now(), title:v.title, cat:v.cat, status:v.status, author:STATE.me, updated:new Date(), views:0, up:0, down:0, tags:[], body:`<p>${esc(v.body).replace(/\n/g,'</p><p>')}</p>` });
+          closeModal(); go('kb'); toast('Article saved'); } }); break;
+    case 'newChange': formModal({ title:'Raise a change', width:'max-w-xl', fields:[
+        { k:'title', label:'What is changing?', required:true },
+        { k:'risk', label:'Risk', type:'select', half:true, opts:['Low','Medium','High'] },
+        { k:'type', label:'Type', type:'select', half:true, opts:['Standard','Normal','Emergency'] },
+        { k:'impact', label:'Who is affected?', half:true }, { k:'dur', label:'Expected duration', half:true, ph:'e.g. 4h' },
+        { k:'plan', label:'Implementation plan', type:'textarea', required:true },
+        { k:'backout', label:'Back-out plan', type:'textarea', required:true, rows:3 }],
+        submit:'Submit for approval', onSubmit(v){ if(!v.title) return toast('Give the change a title','warn');
+          DB.changes.unshift({ id:'CHG-0'+(312+DB.changes.length), title:v.title, risk:v.risk, state:'Awaiting approval', type:v.type, owner:STATE.me,
+            window:ahead(72), dur:v.dur||'2h', impact:v.impact||'To be assessed', approvals:[{by:'a1',status:'Pending'}], plan:v.plan, backout:v.backout });
+          closeModal(); go('changes'); toast('Change submitted for approval'); } }); break;
+    case 'newProblem': formModal({ title:'Raise a problem', fields:[
+        { k:'title', label:'Pattern you are seeing', required:true },
+        { k:'priority', label:'Priority', type:'select', half:true, opts:['Urgent','High','Medium','Low'] },
+        { k:'linked', label:'Linked incidents', type:'text', half:true, ph:'e.g. 4' },
+        { k:'workaround', label:'Known workaround', type:'textarea', rows:3 }],
+        submit:'Raise problem', onSubmit(v){ if(!v.title) return toast('Describe the pattern','warn');
+          DB.problems.unshift({ id:'PRB-00'+(45+DB.problems.length), title:v.title, status:'Under investigation', priority:v.priority, owner:STATE.me,
+            linked:Number(v.linked)||0, opened:new Date(), cause:'—', workaround:v.workaround||'None yet' });
+          closeModal(); render(); toast('Problem raised'); } }); break;
+    case 'addAgent': formModal({ title:'Invite an agent', fields:[
+        { k:'name', label:'Full name', required:true }, { k:'email', label:'Work email', required:true, half:true },
+        { k:'title', label:'Job title', half:true }, { k:'role', label:'Role', type:'select', half:true, opts:['Agent','Supervisor','Administrator'] },
+        { k:'group', label:'Group', type:'select', half:true, opts:DB.groups.map(g=>[g.id,g.name]) }],
+        submit:'Send invite', onSubmit(v){ if(!v.name||!v.email) return toast('Name and email are needed','warn');
+          DB.agents.push({ id:'a'+(DB.agents.length+1), name:v.name, title:v.title||'Support Analyst', role:v.role, group:v.group, email:v.email, color:'violet', active:true });
+          closeModal(); render(); toast(`Invite sent to ${v.email}`); } }); break;
+    case 'addGroup': formModal({ title:'New group', fields:[{ k:'name', label:'Group name', required:true },{ k:'desc', label:'What it covers' },
+        { k:'hours', label:'Business hours', type:'select', opts:DB.hours.map(h=>[h.id,h.name]) }],
+        submit:'Create group', onSubmit(v){ if(!v.name) return toast('Name the group','warn');
+          DB.groups.push({ id:'g'+(DB.groups.length+1), name:v.name, desc:v.desc||'—', members:[], hours:v.hours }); closeModal(); render(); toast('Group created'); } }); break;
+    case 'addSla': formModal({ title:'New SLA policy', fields:[{ k:'name', label:'Policy name', required:true },
+        { k:'fr', label:'First response', half:true, ph:'e.g. 30 minutes' }, { k:'res', label:'Resolution', half:true, ph:'e.g. 8 hours' },
+        { k:'hours', label:'Clock', type:'select', half:true, opts:['Business hours','24×7'] }, { k:'esc', label:'Escalation', half:true, ph:'Who to notify' }],
+        submit:'Create policy', onSubmit(v){ if(!v.name) return toast('Name the policy','warn');
+          DB.slas.push({ id:'s'+(DB.slas.length+1), name:v.name, fr:v.fr||'1 hour', res:v.res||'8 hours', hours:v.hours, esc:v.esc||'None', active:true }); closeModal(); render(); toast('Policy created'); } }); break;
+    case 'addRule': formModal({ title:'New automation', width:'max-w-xl', fields:[{ k:'name', label:'Rule name', required:true },
+        { k:'when', label:'When', type:'select', opts:['Ticket is created','Ticket is updated','Time is reached'] },
+        { k:'cond', label:'If', required:true, ph:'e.g. Subject contains "vpn"' },
+        { k:'then', label:'Then', required:true, ph:'e.g. Assign to Network & Infra, set priority High' }],
+        submit:'Create rule', onSubmit(v){ if(!v.name||!v.cond) return toast('Name and condition are needed','warn');
+          DB.automations.unshift({ id:'r'+(DB.automations.length+1), name:v.name, when:v.when, cond:v.cond, then:v.then, runs:0, active:true }); closeModal(); render(); toast('Automation created'); } }); break;
+    case 'addField': formModal({ title:'New ticket field', fields:[{ k:'label', label:'Field label', required:true },
+        { k:'type', label:'Type', type:'select', half:true, opts:['Text','Paragraph','Dropdown','Checkbox','Date','Lookup'] },
+        { k:'required', label:'Required', type:'select', half:true, opts:[['yes','Yes'],['no','No']] }],
+        submit:'Add field', onSubmit(v){ if(!v.label) return toast('Label the field','warn');
+          DB.fields.push({ id:'f'+(DB.fields.length+1), label:v.label, type:v.type, required:v.required==='yes', agents:true, portal:false }); closeModal(); render(); toast('Field added'); } }); break;
+    case 'addTemplate': case 'editTemplate': toast('Template editor is out of scope for this prototype','warn'); break;
+    case 'addHours': toast('Calendar editor is out of scope for this prototype','warn'); break;
+    case 'addCatalog': toast('Catalog builder is out of scope for this prototype','warn'); break;
+    case 'importAssets': toast('Discovery import is out of scope for this prototype','warn'); break;
+    case 'editArticle': toast('Article editing is out of scope for this prototype','warn'); break;
+    case 'shareArticle': toast('Link copied to clipboard'); break;
+    case 'addAsset': formModal({ title:'Add asset', fields:[{ k:'name', label:'Asset name', required:true },
+        { k:'type', label:'Type', type:'select', half:true, opts:['Laptop','Mobile','Printer','Server','Switch','Dock','License'] },
+        { k:'model', label:'Model', half:true }, { k:'serial', label:'Serial number', half:true },
+        { k:'site', label:'Site', type:'select', half:true, opts:['Toronto HQ','Montréal','Mississauga','Vancouver','Remote'] },
+        { k:'user', label:'Assign to', type:'select', opts:[['','In stock'],...DB.users.map(u=>[u.id,u.name])] }],
+        submit:'Add asset', onSubmit(v){ if(!v.name) return toast('Name the asset','warn');
+          DB.assets.unshift({ id:'AST-'+Math.floor(1000+Math.random()*8999), name:v.name, type:v.type, model:v.model||'—', serial:v.serial||'—',
+            user:v.user||null, site:v.site, status:v.user?'In use':'In stock', warranty:ahead(24*365), os:'—' }); closeModal(); render(); toast('Asset added'); } }); break;
+    default: break;
+  }
+}
+
+function confirmModal(title, body, label, onYes){
+  FORMS.confirm = onYes;
+  openModal({ title, body:`<p class="text-[13.5px] text-muted leading-relaxed">${body}</p>`,
+    footer:`<button data-action="closeModal" class="h-9 px-3.5 rounded-lg border border-line text-[13px] font-medium hover:bg-white">Cancel</button>
+            <button data-confirm="1" class="h-9 px-3.5 rounded-lg bg-alert text-white text-[13px] font-semibold hover:bg-[#A32A25]">${label}</button>` });
+}
+function mergeModal(sourceId){
+  const others = DB.tickets.filter(t=>t.id!==sourceId && isOpen(t));
+  formModal({ title:'Merge ticket', sub:`${sourceId} will be folded into the ticket you choose`,
+    fields:[{ k:'target', label:'Merge into', type:'select', opts:others.map(t=>[t.id,`${t.id} — ${t.subject.slice(0,44)}`]) }],
+    submit:'Merge', onSubmit(v){
+      const src = ticket(sourceId), tgt = ticket(v.target);
+      tgt.conv.push(...src.conv.map(c=>({ ...c, kind:c.kind==='description'?'reply':c.kind })));
+      addSystemNote(tgt, `${sourceId} merged into this ticket`);
+      DB.tickets = DB.tickets.filter(x=>x.id!==sourceId);
+      closeModal(); go('ticket', tgt.id); toast(`${sourceId} merged into ${tgt.id}`);
+    }});
+}
+
+function sendReply(){
+  const t = ticket(STATE.route.id);
+  const box = $('#composer');
+  const body = (box?.value || '').trim();
+  if (!body) return toast('Nothing to send yet','warn');
+  const kind = STATE.composerTab === 'reply' ? 'reply' : 'note';
+  t.conv.push({ kind, by:STATE.me, at:new Date(), body, atts:[] });
+  t.updated = new Date();
+  if (!t.agent){ t.agent = STATE.me; addSystemNote(t, `Assigned to ${agent(STATE.me).name}`); }
+  if (kind === 'reply'){
+    if (!t.respondedAt) t.respondedAt = new Date();
+    if (t.status === 'New') t.status = 'Open';
+  }
+  if ($('[data-toggle="resolveOnSend"]')?.checked){
+    t.status = 'Resolved'; t.resolvedAt = new Date(); addSystemNote(t,'Status changed to Resolved');
+  }
+  render();
+  toast(kind === 'reply' ? 'Reply sent to requester' : 'Private note saved');
+}
+function portalSend(id){
+  const t = ticket(id);
+  const box = $('#portalReply');
+  const body = (box?.value || '').trim();
+  if (!body) return toast('Write something first','warn');
+  t.conv.push({ kind:'reply', by:STATE.requester, at:new Date(), body, atts:[] });
+  t.updated = new Date();
+  if (t.status === 'Pending') t.status = 'Open';
+  render(); toast('Sent — the service desk has been notified');
+}
+function portalSubmit(){
+  const f = $('#portalForm'); if (!f) return;
+  const v = {}; new FormData(f).forEach((x,k)=>v[k]=String(x).trim());
+  if (!v.subject || !v.body) return toast('A subject and some detail are needed','warn');
+  const t = createTicket({ subject:v.subject, body:v.body, requester:STATE.requester, priority:v.priority, category:v.category, type:'Incident', source:'Portal' });
+  go('pticket', t.id);
+  toast(`${t.id} raised — we are on it`);
+}
+function portalSearchRender(q){
+  const box = $('#portalResults'); if (!box) return;
+  q = q.trim().toLowerCase();
+  if (!q){ box.classList.add('hidden'); return; }
+  const arts = DB.articles.filter(a=>a.status==='Published' && (a.title+a.cat+a.tags.join(' ')).toLowerCase().includes(q)).slice(0,4);
+  const items = DB.catalog.filter(c=>(c.name+c.cat+c.desc).toLowerCase().includes(q)).slice(0,3);
+  box.classList.remove('hidden');
+  box.innerHTML = (arts.length||items.length) ? `
+    ${arts.length?`<div class="px-3 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[.09em] text-faint">Answers</div>`:''}
+    ${arts.map(a=>`<button data-particle="${a.id}" class="w-full flex items-center gap-2.5 px-3 h-10 hover:bg-canvas text-left">
+      <span class="text-faint">${icon('book','w-4 h-4')}</span><span class="text-[13px] truncate flex-1">${esc(a.title)}</span>
+      <span class="text-[11px] text-faint shrink-0">${esc(a.cat)}</span></button>`).join('')}
+    ${items.length?`<div class="px-3 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[.09em] text-faint border-t border-line">Services</div>`:''}
+    ${items.map(c=>`<button data-catalog="${c.id}" class="w-full flex items-center gap-2.5 px-3 h-10 hover:bg-canvas text-left">
+      <span class="text-brand">${icon(c.icon,'w-4 h-4')}</span><span class="text-[13px] truncate flex-1">${esc(c.name)}</span>
+      <span class="text-[11px] text-faint shrink-0">${esc(c.sla)}</span></button>`).join('')}`
+    : `<div class="px-3 py-4 text-[13px] text-muted">No answer for “${esc(q)}”. <button data-pnav="newticket" class="text-brand font-medium">Raise a ticket instead</button></div>`;
+}
+
+/* ============================================================
+   Event wiring
+   ============================================================ */
+document.addEventListener('click', e => {
+  const hit = sel => e.target.closest(sel);
+  let el;
+  if (el = hit('[data-confirm]')){ const fn = FORMS.confirm; if (fn) fn(); return; }
+  if (el = hit('[data-mode]')){ closeModal(); switchMode(el.dataset.mode); return; }
+  if (el = hit('[data-palette]')){ const [kind,val] = JSON.parse(el.dataset.palette); closeModal();
+    if (kind==='nav') go(val); else if (kind==='ticket') go('ticket',val); else if (kind==='article') go('article',val);
+    else if (kind==='asset'){ go('assets'); assetModal(val); } else if (kind==='user'){ requesterHistoryModal(val); } return; }
+  if (el = hit('[data-nav]')){ go(el.dataset.nav); return; }
+  if (el = hit('[data-pnav]')){ go(el.dataset.pnav); return; }
+  if (el = hit('[data-open]')){ closeModal(); if (STATE.mode!=='agent') STATE.mode='agent'; go('ticket', el.dataset.open); return; }
+  if (el = hit('[data-pticket]')){ go('pticket', el.dataset.pticket); return; }
+  if (el = hit('[data-particle]')){ closeModal(); go('article', el.dataset.particle); return; }
+  if (el = hit('[data-article]')){ go('article', el.dataset.article); return; }
+  if (el = hit('[data-asset]')){ assetModal(el.dataset.asset); return; }
+  if (el = hit('[data-menu]')){ rowMenu(el.dataset.menu); return; }
+  if (el = hit('[data-view]')){ STATE.savedView = el.dataset.view; STATE.selection.clear(); render(); return; }
+  if (el = hit('[data-tab]')){ STATE.composerTab = el.dataset.tab; render(); return; }
+  if (el = hit('[data-admin]')){ STATE.adminTab = el.dataset.admin; render(); return; }
+  if (el = hit('[data-kbcat]')){ STATE.kbCat = el.dataset.kbcat; render(); return; }
+  if (el = hit('[data-catcat]')){ STATE.catalogCat = el.dataset.catcat; render(); return; }
+  if (el = hit('[data-ptab]')){ STATE.portalTab = el.dataset.ptab; render(); return; }
+  if (el = hit('[data-catalog]')){ closeModal(); catalogRequestModal(el.dataset.catalog, STATE.mode==='agent'); return; }
+  if (el = hit('[data-approve]')){ const c = DB.changes.find(x=>x.id===el.dataset.approve);
+    c.approvals.forEach(a=>{ if(a.status==='Pending') a.status='Approved'; }); c.state='Scheduled'; render(); toast(`${c.id} approved and scheduled`); return; }
+  if (el = hit('[data-reject]')){ const c = DB.changes.find(x=>x.id===el.dataset.reject);
+    c.approvals.forEach(a=>{ if(a.status==='Pending') a.status='Rejected'; }); c.state='Rejected'; render(); toast(`${c.id} rejected`,'bad'); return; }
+  if (el = hit('[data-vote]')){ const a = article(el.dataset.id);
+    el.dataset.vote==='up' ? a.up++ : a.down++; toast(el.dataset.vote==='up'?'Thanks — noted':'Thanks — we will rework this one'); render(); return; }
+  if (el = hit('[data-rate]')){ const t = ticket(el.dataset.id); t.csat = { score:Number(el.dataset.rate), comment:'' }; render(); toast('Thanks for the feedback'); return; }
+  if (el = hit('[data-toggle-row]')){
+    const kind = el.dataset.toggleRow, id = el.dataset.id;
+    const src = kind==='agent' ? DB.agents : kind==='sla' ? DB.slas : DB.automations;
+    const row = src.find(x=>x.id===id); row.active = !row.active; render();
+    toast(`${row.name} ${row.active?'enabled':'disabled'}`, row.active?'ok':'warn'); return; }
+  if (el = hit('#navScrim')){ doAction('closeNav'); return; }
+  if (el = hit('[data-action]')){ doAction(el.dataset.action, el); return; }
+});
+
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.dataset.filter){
+    const k = el.dataset.filter;
+    if (k === 'assetType'){ STATE.filters.assetType = el.value; render(); return; }
+    if (k === 'range'){ toast('Reporting range updated'); return; }
+    STATE.filters[k] = el.value; renderTicketList(); return;
+  }
+  if (el.dataset.check){
+    const id = el.dataset.check;
+    if (id === '__all'){ const list = filteredTickets();
+      el.checked ? list.forEach(t=>STATE.selection.add(t.id)) : STATE.selection.clear(); render(); return; }
+    el.checked ? STATE.selection.add(id) : STATE.selection.delete(id);
+    renderTicketList(); return;
+  }
+  if (el.dataset.bulk){
+    const val = el.value; if (!val) return;
+    const ids = [...STATE.selection];
+    ids.forEach(i => { const t = ticket(i);
+      if (el.dataset.bulk==='assign'){ t.agent = val; addSystemNote(t, `Assigned to ${agent(val).name}`); }
+      if (el.dataset.bulk==='status'){ t.status = val; if(val==='Resolved') t.resolvedAt=new Date(); addSystemNote(t, `Status changed to ${val}`); }
+      if (el.dataset.bulk==='priority'){ t.priority = val; addSystemNote(t, `Priority set to ${val}`); }
+    });
+    STATE.selection.clear(); render(); toast(`${ids.length} tickets updated`); return;
+  }
+  if (el.dataset.prop){
+    const t = ticket(STATE.route.id), k = el.dataset.prop, v = el.value;
+    if (k === 'agent'){ t.agent = v || null; addSystemNote(t, v ? `Assigned to ${agent(v).name}` : 'Unassigned'); }
+    else if (k === 'group'){ t.group = v; addSystemNote(t, `Moved to ${group(v).name}`); }
+    else { if (k==='status' && v==='Resolved') t.resolvedAt = new Date(); if (k==='status' && v!=='Resolved') t.resolvedAt = null;
+      t[k] = v; addSystemNote(t, `${k[0].toUpperCase()+k.slice(1)} set to ${v}`); }
+    t.updated = new Date(); render(); toast('Ticket updated'); return;
+  }
+  if (el.dataset.task !== undefined && el.type === 'checkbox' && el.dataset.task !== ''){
+    const t = ticket(STATE.route.id); t.tasks[Number(el.dataset.task)].done = el.checked; render(); return;
+  }
+  if (el.dataset.action === 'canned'){
+    const c = DB.canned.find(x=>x.id===el.value); if (!c) return;
+    const box = $('#composer'); if (box){ box.value = c.body; box.focus(); } el.value=''; return;
+  }
+  if (el.dataset.action === 'setAgent'){ STATE.me = el.value; render(); toast(`Now working as ${agent(el.value).name}`); return; }
+  if (el.dataset.action === 'setRequester'){ STATE.requester = el.value; render(); toast(`Portal shown as ${user(el.value).name}`); return; }
+});
+
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el.id === 'ticketSearch'){ STATE.filters.q = el.value; renderTicketList(); return; }
+  if (el.id === 'assetSearch'){
+    STATE.filters.assetQ = el.value; const v = el.value; render();
+    const again = $('#assetSearch'); if (again){ again.focus(); again.setSelectionRange(v.length, v.length); } return;
+  }
+  if (el.id === 'portalSearch'){ portalSearchRender(el.value); return; }
+});
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); openPalette(); return; }
+  if (e.key === 'Escape'){ closeModal(); const s = $('#sidebar'); if (s) doAction('closeNav'); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter'){
+    if (document.activeElement?.id === 'composer'){ e.preventDefault(); sendReply(); }
+    if (document.activeElement?.id === 'portalReply'){ e.preventDefault(); portalSend(STATE.route.id); }
+  }
+});
+
+/* live SLA clocks */
+setInterval(() => {
+  $$('[data-countdown]').forEach(el => {
+    const t = ticket(el.dataset.countdown); if (!t) return;
+    el.textContent = slaLabel(t); el.style.color = SLA_COLOR[sla(t).state];
+  });
+  if (STATE.mode === 'agent' && STATE.route.view === 'tickets' && !STATE.selection.size) renderTicketList();
+}, 30000);
+
+window.addEventListener('hashchange', () => {
+  const r = parseHash();
+  if (r.mode !== STATE.mode || r.view !== STATE.route.view || r.id !== STATE.route.id){
+    STATE.mode = r.mode; STATE.route = { view:r.view, id:r.id }; render();
+  }
+});
+
+/* boot */
+(function init(){
+  const r = parseHash();
+  STATE.mode = r.mode; STATE.route = { view:r.view, id:r.id };
+  if (!location.hash) location.hash = '#/agent/dashboard';
+  render();
+})();
+</script>
+</body>
+</html>

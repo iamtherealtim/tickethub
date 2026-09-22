@@ -321,6 +321,9 @@ class TicketIntake
             'ticket_id' => $data['id'], 'kind' => 'description', 'user_id' => $o['requester_id'],
             'body' => $o['body'], 'attachments' => json_encode($o['attachments'] ?? []), 'created_at' => $now,
         ];
+        if (($o['format'] ?? '') === 'markdown' && self::hasMessageFormat()) {
+            $descRow['format'] = 'markdown';
+        }
         if (! empty($o['message_id'])) {
             $descRow['message_id'] = mb_substr((string) $o['message_id'], 0, 255);
         }
@@ -402,6 +405,219 @@ class TicketIntake
         }
 
         return ['n' => mb_substr($filename, 0, 150), 'f' => $stored, 's' => strlen($bytes)];
+    }
+
+    /* ---------- message format / email hygiene ---------- */
+
+    /** Has the ticket_messages.format column been migrated in? Cached per request. */
+    public static function hasMessageFormat(): bool
+    {
+        static $has = null;
+        if ($has === null) {
+            try {
+                $has = db_connect()->fieldExists('format', 'ticket_messages');
+            } catch (\Throwable $e) {
+                $has = false;
+            }
+        }
+
+        return $has;
+    }
+
+    /**
+     * Cut the quoted history off an email reply: everything from the first
+     * "On ... wrote:" line, a forwarded "From:" header block, an Outlook
+     * "-----Original Message-----" divider, or the first run of ">" lines.
+     */
+    public static function stripQuotedHistory(string $text): string
+    {
+        $lines = preg_split('/\r?\n/', $text) ?: [];
+        $keep  = [];
+        $n     = count($lines);
+        for ($i = 0; $i < $n; $i++) {
+            $line = $lines[$i];
+            $trim = trim($line);
+            if (preg_match('/^-{2,}\s*Original Message\s*-{2,}$/i', $trim)
+                || preg_match('/^_{5,}$/', $trim)
+                || preg_match('/^On .{5,200}wrote:\s*$/su', $trim)
+                || preg_match('/^(Le|Am|El) .{5,200}(a écrit|schrieb|escribió)\s*:\s*$/su', $trim)) {
+                break;
+            }
+            // "On <date>, <name> wrote:" wrapped over two lines by the client.
+            if (preg_match('/^On .{5,200}$/s', $trim) && $i + 1 < $n && preg_match('/wrote:\s*$/', trim($lines[$i + 1]))) {
+                break;
+            }
+            // A forwarded/quoted header block: From: followed within a few lines by Sent:/Date:/To:/Subject:.
+            if (preg_match('/^\*?From:\*?\s/i', $trim)) {
+                $block = implode("\n", array_slice($lines, $i, 5));
+                if (preg_match('/^\*?(Sent|Date|To|Subject):\*?\s/mi', $block)) {
+                    break;
+                }
+            }
+            if (str_starts_with($trim, '>')) {
+                // Skip the quoted run, keep anything a top-poster wrote after it.
+                while ($i < $n && (str_starts_with(trim($lines[$i]), '>') || trim($lines[$i]) === '')) {
+                    $i++;
+                }
+                $i--;
+
+                continue;
+            }
+            $keep[] = $line;
+        }
+
+        return trim(implode("\n", $keep));
+    }
+
+    /** The workspace visibility rule, for a user row rather than a session. */
+    public static function agentCanSee(array $user, array $t): bool
+    {
+        if (($user['role'] ?? '') === 'Administrator') {
+            return true;
+        }
+        $g = (int) ($user['group_id'] ?? 0);
+
+        return ($g > 0 && (int) ($t['group_id'] ?? 0) === $g) || (int) ($t['agent_id'] ?? 0) === (int) $user['id'];
+    }
+
+    /* ---------- templates + recurring ---------- */
+
+    /**
+     * Raise a ticket from a template row: subject/body/type/priority/category/
+     * group/agent come from the template, the task list is added afterwards.
+     */
+    public function createFromTemplate(array $tpl, int $requesterId, array $overrides = []): array
+    {
+        $t = $this->create($overrides + [
+            'subject' => $tpl['subject'], 'body' => $tpl['body'],
+            'requester_id' => $requesterId,
+            'type' => $tpl['type'] ?: 'Incident', 'priority' => $tpl['priority'] ?: 'Medium',
+            'category' => $tpl['category'] ?: 'Software',
+            'group_id' => $tpl['group_id'] ? (int) $tpl['group_id'] : null,
+            'agent_id' => $tpl['agent_id'] ? (int) $tpl['agent_id'] : null,
+            'source' => 'Portal',
+        ]);
+        self::addTemplateTasks((int) $t['id'], $tpl);
+
+        return $t;
+    }
+
+    /** Insert the template's task titles on a ticket (no owner). */
+    public static function addTemplateTasks(int $ticketId, array $tpl): int
+    {
+        $tasks = json_decode((string) ($tpl['tasks'] ?? '[]'), true) ?: [];
+        $rows  = [];
+        foreach ($tasks as $title) {
+            $title = trim((string) $title);
+            if ($title !== '') {
+                $rows[] = ['ticket_id' => $ticketId, 'title' => mb_substr($title, 0, 255), 'done' => 0, 'owner_id' => null];
+            }
+        }
+        if ($rows) {
+            db_connect()->table('ticket_tasks')->insertBatch($rows);
+        }
+
+        return count($rows);
+    }
+
+    /**
+     * The run after $from for a schedule row, in the schedule's own timezone,
+     * returned as a UTC "Y-m-d H:i:s". Weekly schedules land on `weekday`
+     * (0 = Sunday … 6 = Saturday) and monthly ones on `day_of_month`,
+     * clamped to the month's length; both at `at_time`.
+     */
+    public static function nextRun(array $r, ?\DateTimeImmutable $from = null): string
+    {
+        try {
+            $tz = new \DateTimeZone($r['tz'] ?: 'UTC');
+        } catch (\Throwable $e) {
+            $tz = new \DateTimeZone('UTC');
+        }
+        $from ??= new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $local = $from->setTimezone($tz);
+        [$h, $m] = array_map('intval', explode(':', ($r['at_time'] ?: '09:00') . ':00'));
+        $every = $r['every'] ?: 'week';
+        $step  = max(1, (int) ($r['interval'] ?? 1));
+
+        $cand = $local->setTime($h, $m, 0);
+        for ($guard = 0; $guard < 400; $guard++) {
+            if ($every === 'week' && $r['weekday'] !== null && $r['weekday'] !== '') {
+                $wd   = (int) $r['weekday'] % 7;
+                $diff = ($wd - (int) $cand->format('w') + 7) % 7;
+                $cand = $cand->modify('+' . $diff . ' days')->setTime($h, $m, 0);
+            } elseif ($every === 'month' && $r['day_of_month'] !== null && $r['day_of_month'] !== '') {
+                $dom  = min(max(1, (int) $r['day_of_month']), (int) $cand->format('t'));
+                $cand = $cand->setDate((int) $cand->format('Y'), (int) $cand->format('n'), $dom)->setTime($h, $m, 0);
+            }
+            if ($cand > $local) {
+                return $cand->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+            }
+            $cand = match ($every) {
+                'day'   => $cand->modify('+' . $step . ' days'),
+                'month' => $cand->setDate((int) $cand->format('Y'), (int) $cand->format('n') + $step, 1),
+                default => $cand->modify('+' . (7 * $step) . ' days'),
+            };
+            $cand = $cand->setTime($h, $m, 0);
+        }
+
+        return $from->modify('+1 day')->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+    }
+
+    /**
+     * Raise every recurring ticket whose next_run_at has passed. Each row is
+     * advanced in the same statement that claims it, so two overlapping runs
+     * cannot both raise the same ticket; the cron lock is belt-and-braces.
+     *
+     * @return list<string> one line per action, for the cron report
+     */
+    public static function runDueRecurring(): array
+    {
+        $db = db_connect();
+        if (! $db->tableExists('recurring_tickets')) {
+            return [];
+        }
+        helper('tickethub');
+        $now = date('Y-m-d H:i:s');
+        $due = $db->query(
+            'SELECT r.*, t.name AS template_name FROM recurring_tickets r JOIN ticket_templates t ON t.id = r.template_id
+             WHERE r.active = 1 AND r.next_run_at <= ? ORDER BY r.next_run_at, r.id',
+            [$now]
+        )->getResultArray();
+
+        $out = [];
+        foreach ($due as $r) {
+            $tpl = $db->table('ticket_templates')->where('id', (int) $r['template_id'])->get()->getRowArray();
+            $next = self::nextRun($r);
+            // Claim: only the run that moves next_run_at forward gets to create.
+            $db->query('UPDATE recurring_tickets SET next_run_at = ?, last_run_at = ? WHERE id = ? AND next_run_at = ?', [$next, $now, (int) $r['id'], $r['next_run_at']]);
+            if ($db->affectedRows() < 1) {
+                continue;
+            }
+            if (! $tpl) {
+                $out[] = 'Recurring #' . $r['id'] . ' skipped — template missing';
+
+                continue;
+            }
+            $requester = $db->table('users')->where('id', (int) $r['requester_id'])->where('active', 1)->get()->getRowArray();
+            if (! $requester) {
+                $out[] = 'Recurring "' . $tpl['name'] . '" skipped — requester inactive';
+
+                continue;
+            }
+            try {
+                $t = (new self(null))->createFromTemplate($tpl, (int) $requester['id']);
+                $db->table('ticket_messages')->insert([
+                    'ticket_id' => $t['id'], 'kind' => 'system', 'user_id' => null,
+                    'body' => 'Raised automatically from template "' . $tpl['name'] . '" (recurring)', 'attachments' => '[]', 'created_at' => $now,
+                ]);
+                $out[] = 'Recurring "' . $tpl['name'] . '" raised ' . $t['code'] . ' (next ' . $next . ' UTC)';
+            } catch (\Throwable $e) {
+                log_message('error', 'Recurring ticket #{id} failed: {msg}', ['id' => $r['id'], 'msg' => $e->getMessage()]);
+                $out[] = 'Recurring "' . $tpl['name'] . '" failed: ' . $e->getMessage();
+            }
+        }
+
+        return $out;
     }
 
     /* ---------- inbound email ---------- */
@@ -587,8 +803,22 @@ class TicketIntake
         $atts = is_callable($attachments) ? (array) $attachments() : $attachments;
 
         if ($t) {
+            // An agent answering from their mail client: the quoted history is
+            // noise, and a first line of "#note" files it as a private note
+            // rather than a reply the requester sees.
+            $kind = 'reply';
+            if ($isAgent) {
+                $text = self::stripQuotedHistory($text);
+                if (preg_match('/^\s*#note\b[ \t]*\r?\n?/i', $text)) {
+                    $kind = 'note';
+                    $text = trim((string) preg_replace('/^\s*#note\b[ \t]*\r?\n?/i', '', $text, 1));
+                }
+                if (! self::agentCanSee($user, $t)) {
+                    log_message('warning', 'Inbound email: {who} replied to {code} outside their group scope; accepted because they were on the thread.', ['who' => $user['email'], 'code' => $t['code']]);
+                }
+            }
             $row = [
-                'ticket_id' => $t['id'], 'kind' => 'reply', 'user_id' => $user['id'],
+                'ticket_id' => $t['id'], 'kind' => $kind, 'user_id' => $user['id'],
                 'body' => $text !== '' ? $text : $subject,
                 'attachments' => json_encode($atts), 'created_at' => $now,
             ];
@@ -597,14 +827,21 @@ class TicketIntake
             }
             $this->db->table('ticket_messages')->insert($row);
             $upd = ['updated_at' => $now];
-            if ($t['status'] === 'Pending') {
-                $upd['status'] = 'Open';
-            } elseif (! th_is_open($t)) {
-                $upd['status'] = 'Open';
-                $upd['resolved_at'] = null;
-            }
-            if ($isAgent && ! $t['responded_at']) {
-                $upd['responded_at'] = $now;
+            if ($kind === 'reply') {
+                if ($t['status'] === 'Pending' && ! $isAgent) {
+                    $upd['status'] = 'Open';
+                } elseif (! th_is_open($t)) {
+                    $upd['status'] = 'Open';
+                    $upd['resolved_at'] = null;
+                } elseif ($isAgent && $t['status'] === 'New') {
+                    $upd['status'] = 'Open';
+                }
+                if ($isAgent && ! $t['responded_at']) {
+                    $upd['responded_at'] = $now;
+                }
+                if ($isAgent && empty($t['agent_id'])) {
+                    $upd['agent_id'] = (int) $user['id'];
+                }
             }
             $this->db->table('tickets')->where('id', $t['id'])->update(th_status_change($t, $upd));
             if (($upd['status'] ?? '') === 'Open' && ! th_is_open($t)) {
@@ -613,14 +850,31 @@ class TicketIntake
                     'body' => 'Reopened by an email reply from ' . $user['name'], 'attachments' => '[]', 'created_at' => $now,
                 ]);
             }
-            self::notifyReply(array_merge($t, $upd), (int) $user['id'], $user['name']);
+            if (! empty($upd['agent_id'])) {
+                $this->db->table('ticket_messages')->insert([
+                    'ticket_id' => $t['id'], 'kind' => 'system', 'user_id' => null,
+                    'body' => 'Assigned to ' . $user['name'], 'attachments' => '[]', 'created_at' => $now,
+                ]);
+            }
+            $fresh = array_merge($t, $upd);
+            if ($kind === 'reply') {
+                if ($isAgent) {
+                    // The same promise the reply box makes: the requester is emailed.
+                    try {
+                        Mailer::sendTemplate('Public reply sent', $fresh, $this->userById((int) $t['requester_id']) ?? [], $user, ['message' => $row['body']]);
+                    } catch (\Throwable $e) {
+                        log_message('error', 'Reply-by-email notify failed: {msg}', ['msg' => $e->getMessage()]);
+                    }
+                }
+                self::notifyReply($fresh, (int) $user['id'], $user['name']);
+            }
             try {
                 (new AutomationEngine())->event('Ticket is updated', (int) $t['id']);
             } catch (\Throwable $e) {
                 log_message('error', 'Automation event failed: {msg}', ['msg' => $e->getMessage()]);
             }
 
-            return ['ok' => true, 'ticket' => $t['code'], 'action' => 'replied', 'reason' => ''];
+            return ['ok' => true, 'ticket' => $t['code'], 'action' => $kind === 'note' ? 'noted' : 'replied', 'reason' => ''];
         }
 
         $body = $text !== '' ? $text : '(no body)';

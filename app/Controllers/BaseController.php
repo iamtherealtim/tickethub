@@ -341,9 +341,96 @@ abstract class BaseController extends Controller
             'groups'        => $this->db->table('groups')->orderBy('id')->get()->getResultArray(),
             'agents'        => $this->db->table('users')->whereIn('role', ['Administrator', 'Supervisor', 'Agent'])->orderBy('id')->get()->getResultArray(),
             'requesters'    => $this->db->table('users')->where('role', 'Requester')->orderBy('name')->get()->getResultArray(),
-            'cannedList'    => $this->db->table('canned_responses')->get()->getResultArray(),
+            'cannedList'    => $this->cannedResponses(),
             'ticketFields'  => $this->db->table('ticket_fields')->orderBy('id')->get()->getResultArray(),
+            'ticketTemplates' => $this->ticketTemplates(),
         ];
+    }
+
+    /** Ticket templates for the new-ticket modal; empty until that migration has run. */
+    protected function ticketTemplates(): array
+    {
+        try {
+            return $this->db->table('ticket_templates')->orderBy('name')->get()->getResultArray();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Canned responses this agent may use: global ones, their group's, and
+     * their own personal ones. Before the scope migration every row is global.
+     */
+    protected function cannedResponses(): array
+    {
+        $b = $this->db->table('canned_responses');
+        if ($this->db->fieldExists('scope', 'canned_responses')) {
+            $me = (int) ($this->me['id'] ?? 0);
+            $g  = (int) ($this->me['group_id'] ?? 0);
+            $b->groupStart()->where('scope', 'global')
+                ->orGroupStart()->where('scope', 'personal')->where('owner_id', $me)->groupEnd();
+            if ($g > 0) {
+                $b->orGroupStart()->where('scope', 'group')->where('group_id', $g)->groupEnd();
+            }
+            $b->groupEnd()->orderBy("FIELD(scope,'personal','group','global')", '', false);
+        }
+
+        return $b->orderBy('title')->get()->getResultArray();
+    }
+
+    /**
+     * Store one pasted/dropped image for the Markdown editor. Same rules as
+     * storeUploads() but images only and 5 MB. The descriptor is also parked
+     * on the ticket's first message (flagged inline, so it is not shown as a
+     * chip) so /files/<name> is servable straight away — the file server only
+     * hands out files that belong to a ticket the viewer may see.
+     * Returns [stored name, error message].
+     */
+    protected function storeInlineImage(array $ticket, string $field = 'image'): array
+    {
+        $file = $this->request->getFile($field);
+        if (! $file || ! $file->isValid()) {
+            return [null, 'No image received'];
+        }
+        $ext = strtolower($file->getClientExtension() ?: ($file->guessExtension() ?? ''));
+        if (! in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true) || ! str_starts_with((string) $file->getMimeType(), 'image/')) {
+            return [null, 'Only PNG, JPG, GIF or WebP images can be pasted'];
+        }
+        if ($file->getSize() > 5 * 1024 * 1024) {
+            return [null, 'Images must be 5 MB or smaller'];
+        }
+        $dir = WRITEPATH . 'uploads/tickets';
+        if (! is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+        $name = bin2hex(random_bytes(16)) . '.' . $ext;
+        $size = $file->getSize();
+        $file->move($dir, $name);
+
+        $first = $this->db->table('ticket_messages')->where('ticket_id', (int) $ticket['id'])->orderBy('id')->limit(1)->get()->getRowArray();
+        if ($first) {
+            $atts   = json_decode($first['attachments'] ?? '[]', true) ?: [];
+            $atts[] = ['n' => $file->getClientName() ?: $name, 'f' => $name, 's' => $size, 'inline' => 1];
+            $this->db->table('ticket_messages')->where('id', $first['id'])->update(['attachments' => json_encode($atts)]);
+        }
+
+        return [$name, null];
+    }
+
+    /** JSON for an editor AJAX call, carrying the rotated CSRF token in a header. */
+    protected function editorJson(array $payload, int $status = 200)
+    {
+        return $this->response->setStatusCode($status)->setHeader('X-CSRF-TOKEN', csrf_hash())->setJSON($payload);
+    }
+
+    /** Rendered Markdown for the editor's Preview tab. */
+    protected function markdownPreview()
+    {
+        $body = (string) ($this->request->getPost('body') ?? '');
+        $html = th_markdown($body);
+
+        return $this->response->setHeader('X-CSRF-TOKEN', csrf_hash())
+            ->setBody($html !== '' ? '<div class="prose-md">' . $html . '</div>' : '<p class="text-[13px] text-faint italic">Nothing to preview yet.</p>');
     }
 
     protected function users(): array

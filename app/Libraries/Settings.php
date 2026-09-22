@@ -15,7 +15,7 @@ namespace App\Libraries;
  */
 class Settings
 {
-    public const SENSITIVE_KEYS = ['mail_password', 'azure_client_secret', 'pdq_api_key', 'inbound_email_secret'];
+    public const SENSITIVE_KEYS = ['mail_password', 'azure_client_secret', 'pdq_api_key', 'inbound_email_secret', 'oidc_client_secret', 'ldap_bind_password'];
 
     private const ENC_PREFIX = 'enc:';
 

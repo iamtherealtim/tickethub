@@ -117,9 +117,6 @@ class AutomationEngine
     {
         $out   = [];
         $rules = $this->db->table('automations')->where('active', 1)->where('when_event', $trigger)->get()->getResultArray();
-        if (! $rules) {
-            return $out;
-        }
         foreach ($rules as $rule) {
             // Re-read inside the loop so later rules see earlier rules' changes.
             $t = $this->db->table('tickets')->where('id', $ticketId)->get()->getRowArray();
@@ -129,7 +126,68 @@ class AutomationEngine
             $out[] = $t['code'] . ' — "' . $rule['name'] . '": ' . $this->execute($rule, $t);
         }
 
+        // Outbound webhooks see the ticket after the rules have had their say.
+        // Wrapped so a webhook problem never breaks the action that fired it.
+        try {
+            $this->dispatchWebhooks($trigger, $ticketId);
+        } catch (\Throwable $e) {
+            log_message('error', 'Webhook dispatch failed: {msg}', ['msg' => $e->getMessage()]);
+        }
+
         return $out;
+    }
+
+    /**
+     * Send ticket.<event> to subscribed webhook endpoints. The base event is the
+     * normalised trigger (ticket.created / ticket.updated); on an update the
+     * specific thing that just happened (resolved, closed, assigned, replied,
+     * escalated) is derived from the ticket row and the newest message written
+     * in the last few seconds, so subscribers can listen for just that.
+     */
+    private function dispatchWebhooks(string $trigger, int $ticketId): void
+    {
+        $t = $this->db->table('tickets')->where('id', $ticketId)->get()->getRowArray();
+        if (! $t) {
+            return;
+        }
+        $base    = Webhooks::normalize($trigger);
+        $payload = ['ticket' => Webhooks::ticketPayload($t)];
+        Webhooks::dispatch($base, $payload);
+
+        if ($base !== 'ticket.updated') {
+            return;
+        }
+        // Messages written by the action that just fired (system notes, replies)
+        // say what happened; each distinct thing becomes one derived event, and
+        // recentlySent() stops the same one going out twice inside the window.
+        $since  = date('Y-m-d H:i:s', time() - 15);
+        $extra  = [];
+        $recent = $this->db->table('ticket_messages')->where('ticket_id', $ticketId)
+            ->where('created_at >=', $since)->orderBy('id')->get()->getResultArray();
+        foreach ($recent as $m) {
+            $body = (string) $m['body'];
+            if ($m['kind'] === 'reply') {
+                $extra[] = 'ticket.replied';
+            } elseif ($m['kind'] === 'system') {
+                if (preg_match('/\b(Status changed to|status →|Resolved by|Marked as) ?Resolved\b|\bResolved\b.*\bby\b/i', $body) && $t['status'] === 'Resolved') {
+                    $extra[] = 'ticket.resolved';
+                } elseif (preg_match('/\bClosed\b/', $body) && $t['status'] === 'Closed') {
+                    $extra[] = 'ticket.closed';
+                } elseif (preg_match('/^(Assigned to|Auto-assigned to|Claimed by)|\bassigned to\b/i', $body) && ! empty($t['agent_id'])) {
+                    $extra[] = 'ticket.assigned';
+                } elseif (stripos($body, 'escalat') !== false && (int) $t['escalated'] === 1) {
+                    $extra[] = 'ticket.escalated';
+                }
+            }
+        }
+        if (! $recent && $t['status'] === 'Resolved' && ! empty($t['resolved_at']) && $t['resolved_at'] >= $since) {
+            $extra[] = 'ticket.resolved'; // resolved without a note (e.g. an automation)
+        }
+        foreach (array_unique($extra) as $event) {
+            if (! Webhooks::recentlySent($event, $t['code'])) {
+                Webhooks::dispatch($event, $payload);
+            }
+        }
     }
 
     /**
@@ -161,7 +219,7 @@ class AutomationEngine
         ];
 
         try {
-            $res = service('curlrequest', null, null, false)->post($url, [
+            $res = service('curlrequest', [], null, null, false)->post($url, [
                 'json'        => $payload,
                 'timeout'     => 5,
                 'http_errors' => false,

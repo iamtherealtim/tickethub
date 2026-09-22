@@ -1,0 +1,75 @@
+# TicketHub — local/production-style stack.
+#
+#   cp docker/.env.docker.example .env.docker   # edit at least the passwords
+#   docker compose up -d --build
+#   docker compose exec app php spark tickethub:setup --email you@company.com
+#
+# Then open http://localhost:8080.
+#
+# app   Apache + PHP 8.2 serving public/, migrations run on start (see docker/entrypoint.sh)
+# db    MariaDB 11 with a persistent volume
+# cron  same image, runs the schedulers in a loop (see docker/cron.sh)
+
+services:
+  app:
+    build: .
+    image: tickethub:latest
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    env_file:
+      - .env.docker
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Uploaded attachments, sessions, logs and the generated .env survive restarts.
+      - app_writable:/var/www/html/writable
+      # To manage .env yourself instead of the generated one, uncomment:
+      # - ./.env:/var/www/html/.env:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    # MARIADB_* (database, user, passwords) come from .env.docker; keep them in
+    # sync with the DB_* values the app uses.
+    env_file:
+      - .env.docker
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  cron:
+    image: tickethub:latest
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      # The app container owns migrations; the scheduler only waits for the DB.
+      SKIP_MIGRATIONS: "1"
+    command: ["sh", "/var/www/html/docker/cron.sh"]
+    depends_on:
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    volumes:
+      - app_writable:/var/www/html/writable
+
+volumes:
+  db_data:
+  app_writable:
