@@ -89,7 +89,7 @@ echo '<div class="mt-3">' . th_card(th_card_head('Recent deliveries', '<span cla
 ?>
 
 <template id="tpl-addWebhook">
-  <form method="post" action="<?= site_url('app/admin/webhooks') ?>" data-modal-title="New webhook" data-modal-width="max-w-2xl" data-submit="Create webhook">
+  <form method="post" action="<?= site_url('app/admin/webhooks') ?>" data-modal-title="New webhook" data-modal-width="max-w-[50.4rem]" data-submit="Create webhook">
     <?= csrf_field() ?>
     <?= $epFields() ?>
   </form>
@@ -97,7 +97,7 @@ echo '<div class="mt-3">' . th_card(th_card_head('Recent deliveries', '<span cla
 
 <?php foreach ($endpoints as $ep): ?>
 <template id="tpl-editWebhook-<?= $ep['id'] ?>">
-  <div data-modal-title="Edit <?= esc($ep['name'], 'attr') ?>" data-modal-width="max-w-2xl" data-submit="Save">
+  <div data-modal-title="Edit <?= esc($ep['name'], 'attr') ?>" data-modal-width="max-w-[50.4rem]" data-submit="Save">
     <form method="post" action="<?= site_url('app/admin/webhooks/' . $ep['id']) ?>" data-primary>
       <?= csrf_field() ?>
       <?= $epFields($ep) ?>
