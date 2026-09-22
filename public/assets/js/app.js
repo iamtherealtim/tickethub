@@ -42,7 +42,7 @@
   function openModalShell(title, sub, width, bodyNode, footerHTML) {
     modalRoot.innerHTML =
       '<div class="fixed inset-0 z-[80] flex items-start justify-center p-4 sm:p-8 overflow-y-auto">' +
-      '<div data-close-modal class="fixed inset-0 bg-ink/40 backdrop-blur-[2px]"></div>' +
+      '<div data-modal-backdrop class="fixed inset-0 bg-ink/40 backdrop-blur-[2px]"></div>' +
       '<div role="dialog" aria-modal="true" class="relative w-full ' + (width || 'max-w-lg') + ' bg-white rounded-2xl shadow-pop pop-in my-auto">' +
       '<div class="flex items-start gap-3 px-5 py-4 border-b border-line">' +
       '<div class="flex-1"><h2 class="font-display text-[17px] font-semibold"></h2>' +
@@ -63,6 +63,22 @@
       p.classList.remove('hidden');
     }
     $('[data-shell-body]', modalRoot).appendChild(bodyNode);
+    const isDataEntry = bodyNode.tagName === 'FORM' || !!bodyNode.querySelector('form[data-primary]');
+    const backdrop = $('[data-modal-backdrop]', modalRoot);
+    if (isDataEntry) {
+      // Guarded: outside click does not close it, so a stray click never costs
+      // someone a half-written ticket. It nudges the dialog instead of doing
+      // nothing, so the click still reads as "seen", not "broken".
+      backdrop.addEventListener('click', () => {
+        const dialog = $('[role="dialog"]', modalRoot);
+        if (!dialog) return;
+        dialog.classList.remove('shake-no');
+        void dialog.offsetWidth;
+        dialog.classList.add('shake-no');
+      });
+    } else {
+      backdrop.setAttribute('data-close-modal', '');
+    }
     if (footerHTML) {
       const f = $('[data-shell-footer]', modalRoot);
       f.innerHTML = footerHTML;
