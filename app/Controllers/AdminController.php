@@ -14,8 +14,19 @@ class AdminController extends BaseController
 
     public function index(string $tab = 'agents')
     {
-        if (! in_array($tab, self::TABS, true)) {
+        // Plug-in tabs live in app/Views/agent/admin/<tab>.php with a sibling
+        // <tab>.tab.php describing label/icon/order and a data provider.
+        $plugin = preg_match('/^[a-z][a-z0-9_-]*$/', $tab) && is_file(APPPATH . 'Views/agent/admin/' . $tab . '.tab.php')
+            ? $tab : null;
+        if ($plugin === null && ! in_array($tab, self::TABS, true)) {
             $tab = 'agents';
+        }
+        $pluginVars = [];
+        if ($plugin !== null) {
+            $meta = include APPPATH . 'Views/agent/admin/' . $plugin . '.tab.php';
+            if (isset($meta['data']) && is_callable($meta['data'])) {
+                $pluginVars = (array) ($meta['data'])($this->request, $this->me);
+            }
         }
 
         $openTickets = $this->db->table('tickets')->whereIn('status', TH_OPEN_STATES)->get()->getResultArray();
@@ -28,8 +39,8 @@ class AdminController extends BaseController
             $openByGroup[(int) $t['group_id']] = ($openByGroup[(int) $t['group_id']] ?? 0) + 1;
         }
 
-        return view('agent/admin', $this->agentShared() + [
-            'title' => 'Admin', 'nav' => 'admin', 'tab' => $tab,
+        return view('agent/admin', $pluginVars + $this->agentShared() + [
+            'title' => 'Admin', 'nav' => 'admin', 'tab' => $tab, 'pluginTab' => $plugin,
             'users' => $this->users(),
             'openByAgent' => $openByAgent, 'openByGroup' => $openByGroup,
             'hours' => $this->db->table('business_hours')->get()->getResultArray(),

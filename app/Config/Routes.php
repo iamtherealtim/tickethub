@@ -188,3 +188,9 @@ $routes->group('portal', ['filter' => 'portalAuth'], static function ($routes) {
     $routes->post('tickets/(:segment)/rate', 'PortalController::rate/$1');
     $routes->get('search', 'PortalController::search');
 });
+
+// Feature route files — each module registers its own routes in app/Config/Routes/<module>.php
+// with $routes in scope, so modules can be added without editing this file.
+foreach (glob(APPPATH . 'Config/Routes/*.php') ?: [] as $routeFile) {
+    require $routeFile;
+}
