@@ -87,12 +87,14 @@ $canManage = $canManage ?? false;
             <input type="hidden" name="to" value="Completed">
             <button type="submit" class="w-full h-8 rounded-lg bg-brand text-white text-[12.5px] font-semibold hover:bg-brand-600">Mark completed</button></form>
           <?php endif ?>
-          <div class="flex gap-2 pt-1">
-            <a href="<?= site_url('app/changes/' . $c['id']) ?>" class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line bg-white text-[12.5px] font-medium text-ink-500 hover:bg-canvas transition"><?= th_icon('ext', 'w-3.5 h-3.5') ?>Open</a>
+          <div class="flex flex-col gap-1.5 pt-1">
+            <a href="<?= site_url('app/changes/' . $c['id']) ?>" class="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg border border-line bg-white text-[12.5px] font-medium text-ink-500 hover:bg-canvas transition"><?= th_icon('ext', 'w-3.5 h-3.5') ?>Open</a>
             <?php if ($canManage): ?>
-            <?= th_btn('Edit', 'data-modal="editChange-' . $c['id'] . '"', 'ghost', 'edit') ?>
-            <form method="post" action="<?= site_url('app/changes/' . $c['id'] . '/delete') ?>" data-confirm="Delete <?= esc($c['code'], 'attr') ?>?" data-confirm-label="Delete">
-              <?= csrf_field() ?><?= th_btn('Delete', 'type="submit"', 'danger', 'trash') ?></form>
+            <div class="flex gap-1.5">
+              <?= th_btn('Edit', 'data-modal="editChange-' . $c['id'] . '"', 'ghost', 'edit') ?>
+              <form method="post" action="<?= site_url('app/changes/' . $c['id'] . '/delete') ?>" data-confirm="Delete <?= esc($c['code'], 'attr') ?>?" data-confirm-label="Delete" class="flex-1">
+                <?= csrf_field() ?><?= th_btn('Delete', 'type="submit"', 'danger', 'trash') ?></form>
+            </div>
             <?php endif ?>
           </div>
         </div>
