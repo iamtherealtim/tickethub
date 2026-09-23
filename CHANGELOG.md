@@ -20,6 +20,11 @@ Upgrade notes for operators live in [docs/UPGRADING.md](docs/UPGRADING.md).
 
 ### Changed
 
+- **PHP 8.3 is now the minimum** (was 8.2, whose security support ends on
+  31 December 2026). `public/index.php` and `spark` refuse to start on older
+  versions. The Docker image moves to PHP 8.4, and CI tests 8.3, 8.4 and 8.5.
+  See [docs/UPGRADING.md](docs/UPGRADING.md) before upgrading a manual
+  install.
 - **Stylesheet is now built ahead of time with Tailwind CSS v4** instead of
   compiled in the browser by the Tailwind Play CDN (v3). Pages load one
   ~50 KB cached CSS file instead of a ~400 KB script, render without a flash

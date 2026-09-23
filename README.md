@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/iamtherealtim/tickethub/actions/workflows/ci.yml/badge.svg)](https://github.com/iamtherealtim/tickethub/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![PHP 8.2+](https://img.shields.io/badge/php-8.2%2B-777bb4.svg)](composer.json)
+[![PHP 8.3+](https://img.shields.io/badge/php-8.3%2B-777bb4.svg)](composer.json)
 [![CodeIgniter 4](https://img.shields.io/badge/CodeIgniter-4.7-ef4223.svg)](https://codeigniter.com)
 
 TicketHub is a self-hosted IT service desk for teams that want ITSM without
@@ -11,7 +11,8 @@ changes and assets, a self-service portal with a knowledge base and service
 catalog, automations, email in and out, single sign-on, two-factor
 authentication, webhooks and a JSON API — in **one CodeIgniter 4 application
 on MySQL/MariaDB**. No build step to deploy (the stylesheet ships prebuilt),
-no queue workers, no Composer at runtime. Clone it, point a web server at `public/`, run two `spark` commands.
+no queue workers, no Composer at runtime. Clone it, point a web server at
+`public/`, run two `spark` commands.
 
 ## Screenshots
 
@@ -77,7 +78,7 @@ MariaDB, runs the migrations and the scheduler, and the third prints a
 one-time password for the first Administrator. Sign in at
 http://localhost:8080/login and choose your own.
 
-What is running: `app` (Apache + PHP 8.2, `public/` as document root), `db`
+What is running: `app` (Apache + PHP 8.4, `public/` as document root), `db`
 (MariaDB 11 on a named volume) and `cron` (the same image looping over the
 [scheduled commands](#cron-jobs)). Attachments, sessions and logs live on the
 `app_writable` volume. `docker/entrypoint.sh` writes the application `.env`
@@ -87,7 +88,7 @@ put a TLS-terminating proxy in front before exposing it.
 
 ## Manual install
 
-Requirements: PHP 8.2+ with `intl`, `mbstring`, `mysqli`, `curl`, `openssl`,
+Requirements: PHP 8.3+ with `intl`, `mbstring`, `mysqli`, `curl`, `openssl`,
 `json` (plus `gd` for image thumbnails and `ldap` for directory sign-in);
 MySQL 8.0+ or MariaDB 10.6+; Apache with `mod_rewrite`, nginx or Caddy with
 the document root at `public/`; cron. The framework itself lives in `system/`
