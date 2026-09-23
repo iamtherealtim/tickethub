@@ -80,7 +80,7 @@ class Setup extends BaseCommand
         }
         if ($url !== '') {
             if ($docker) {
-                CLI::error('--url is not used in Docker: set TICKETHUB_DOMAIN in .env.docker, then docker compose up -d.');
+                CLI::error('--url is not used in Docker: set TICKETHUB_DOMAIN in the Docker .env, then docker compose up -d.');
 
                 return EXIT_USER_INPUT;
             }

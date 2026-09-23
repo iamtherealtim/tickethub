@@ -1,13 +1,16 @@
 # TicketHub — production-style image: Apache + PHP 8.4, document root at public/.
 #
-#   docker compose up -d           # app on http://localhost:8080
-#   docker build -t tickethub .    # image only
+# Published as ghcr.io/iamtherealtim/tickethub (amd64 + arm64) by CI; run it
+# with docker/compose.yaml. To build it yourself:
+#   docker build -t tickethub .
 #
 # The framework itself is vendored in system/, but a small number of optional
 # features (SAML sign-in) are real Composer packages, so this build stage
 # runs `composer install` into vendor/ and the final stage below copies just
-# that directory in — nothing else about the image needs Composer.
-FROM composer:2 AS vendor
+# that directory in — nothing else about the image needs Composer. vendor/ is
+# plain PHP, so this stage runs natively on the build machine even when
+# building for another architecture.
+FROM --platform=$BUILDPLATFORM composer:2 AS vendor
 WORKDIR /app
 COPY . .
 # --ignore-platform-reqs: the composer:2 image's own PHP is only used to run
@@ -77,7 +80,7 @@ RUN set -eux; \
 WORKDIR /var/www/html
 
 # Tells the app it is running in this image: Admin → Address & HTTPS and
-# `spark tickethub:url` then point at .env.docker instead of .env.
+# `spark tickethub:url` then point at the Docker .env instead of .env.
 ENV TICKETHUB_DOCKER=1
 
 # Application code (see .dockerignore for what stays out) plus the vendor/

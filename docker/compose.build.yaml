@@ -1,0 +1,14 @@
+# Build the images from this checkout instead of pulling the published ones.
+# Used by CI and for development:
+#
+#   cd docker
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build
+
+services:
+  caddy:
+    build: caddy
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+  # cron uses the image app builds (same name and tag).

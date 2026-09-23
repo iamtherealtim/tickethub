@@ -14,13 +14,17 @@ number.
    8.2 and needs a newer PHP from a backport repository. The Docker image
    already includes PHP 8.4.
 
-   **Docker users, same release:** the stack now includes Caddy on ports 80
-   and 443, and the app no longer publishes port 8080. In `.env.docker`, delete
-   the old `APP_BASE_URL=http://localhost:8080/` line. Set
-   `TICKETHUB_DOMAIN=` to your site's name, and `TICKETHUB_TLS=` to the
-   certificate option you want (see [https.md](https.md)). If you already had
-   your own reverse proxy doing HTTPS, use `TICKETHUB_TLS=upstream` and point
-   it at port 80. Then `docker compose up -d --build`.
+   **Docker users, same release:** the compose file moved to
+   `docker/compose.yaml`, and it now pulls published images and includes Caddy
+   on ports 80 and 443. The app no longer publishes port 8080. Settings moved
+   from `.env.docker` to a `.env` next to `compose.yaml`: start from
+   `docker/.env.example` and carry over `DB_PASSWORD` and `ENCRYPTION_KEY`
+   (the `MARIADB_*` lines are gone). Drop the old
+   `APP_BASE_URL=http://localhost:8080/`, and set `TICKETHUB_DOMAIN` and
+   `TICKETHUB_TLS` instead (see [https.md](https.md)). If your own reverse
+   proxy already does HTTPS, use `TICKETHUB_TLS=upstream` and point it at
+   port 80. Before 1.1 the image couldn't actually serve pages (see the
+   CHANGELOG), so there's no data to migrate.
 
 1. **Back up** the database and the `writable/` directory (attachments,
    sessions, logs live there):

@@ -2,12 +2,12 @@
 # TicketHub container entrypoint.
 #
 # 1. Waits for the database to accept connections.
-# 2. Writes/updates writable/.env from .env.docker on every start (a mounted
+# 2. Writes/updates writable/.env from the Docker .env on every start (a mounted
 #    .env always wins and is never touched). See docker/env-sync.php.
 # 3. Runs pending migrations (php spark migrate --all).
 # 4. Hands over to the CMD (apache2-foreground, or the cron loop).
 #
-# Environment variables (see docker/.env.docker.example):
+# Environment variables (see docker/.env.example):
 #   CI_ENVIRONMENT   production | development            (default: production)
 #   TICKETHUB_DOMAIN public host name; the address becomes https://<domain>/ (default: http://localhost/)
 #   APP_BASE_URL     explicit address, overrides the one derived from TICKETHUB_DOMAIN
@@ -62,8 +62,8 @@ write_env() {
     # The generated file lives on the shared app_writable volume, so it survives
     # container re-creation and the app and cron containers read the SAME file
     # (one encryption.key for both). Its managed keys — environment, address,
-    # proxies, database — are re-applied from .env.docker on every start, so
-    # editing .env.docker and running `docker compose up -d` takes effect.
+    # proxies, database — are re-applied from the Docker .env on every start, so
+    # editing the Docker .env and running `docker compose up -d` takes effect.
     SHARED_ENV=writable/.env
     umask 077
     php docker/env-sync.php "$SHARED_ENV"

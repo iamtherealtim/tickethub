@@ -11,12 +11,12 @@ $docker   = $plat['docker'];
 $modes    = [
     'auto'     => ['Automatic — Let\'s Encrypt', 'Public certificate, obtained and renewed automatically. Needs ports 80 and 443 reachable from the internet.'],
     'dns'      => ['Automatic — Let\'s Encrypt via DNS', 'Public certificate proven through your DNS provider (' . ($plat['provider'] ?: 'not set') . '), renewed automatically. Works for internal-only sites.'],
-    'files'    => ['Your own certificate', 'Certificate and key files from docker/certs/. Renew them yourself before they expire.'],
+    'files'    => ['Your own certificate', 'Certificate and key files from the certs/ folder next to compose.yaml. Renew them yourself before they expire.'],
     'internal' => ['TicketHub\'s internal authority', 'Self-issued and renewed automatically. Browsers trust it once the root certificate is installed on each computer.'],
     'upstream' => ['Handled in front of TicketHub', 'A load balancer, tunnel or proxy you run terminates HTTPS and forwards plain http to TicketHub.'],
 ];
 $modeLabel = $docker
-    ? ($plat['domain'] === '' ? ['Local demo (no domain set)', 'Plain http on this machine. Set TICKETHUB_DOMAIN to give it a real address with HTTPS.'] : ($modes[$plat['tls'] ?: 'auto'] ?? ['Unknown mode "' . $plat['tls'] . '"', 'Check TICKETHUB_TLS in .env.docker.']))
+    ? ($plat['domain'] === '' ? ['Local demo (no domain set)', 'Plain http on this machine. Set TICKETHUB_DOMAIN to give it a real address with HTTPS.'] : ($modes[$plat['tls'] ?: 'auto'] ?? ['Unknown mode "' . $plat['tls'] . '"', 'Check TICKETHUB_TLS in the Docker .env.']))
     : ['Manual install', 'HTTPS is provided by your web server or a proxy in front of it.'];
 $chip = static fn (string $text, string $tone) => '<span class="inline-flex items-center h-[20px] px-1.5 rounded-sm text-[10.5px] font-bold uppercase tracking-wide '
     . ['ok' => 'bg-brand-50 text-brand', 'warn' => 'bg-signal-50 text-signal', 'bad' => 'bg-alert-50 text-alert', 'neutral' => 'bg-canvas text-muted border border-line'][$tone]
@@ -100,8 +100,8 @@ echo th_card(th_card_head('Certificate', '<span class="text-muted">' . ($c ? 'ch
 <div class="mt-3">
 <?php
 if ($docker) {
-    $howto = '<p>Everything lives in <code class="font-mono">.env.docker</code>. Change it, then run <code class="font-mono">docker compose up -d</code> — the new address, certificate mode and proxy settings apply on the next start.</p>'
-        . $code("# Public name people type. Empty = local demo on http://localhost\nTICKETHUB_DOMAIN=helpdesk.example.com\n\n# auto     = Let's Encrypt (public site, ports 80+443 open to the internet)\n# dns      = Let's Encrypt via your DNS provider (internal sites; see docs/https.md)\n# files    = your own certificate in docker/certs/tls.crt + tls.key\n# internal = TicketHub's own authority (install its root on client PCs)\n# upstream = something in front already does HTTPS\nTICKETHUB_TLS=auto");
+    $howto = '<p>Everything lives in the Docker <code class="font-mono">.env</code> (next to <code class="font-mono">compose.yaml</code>; in Dockge, the .env editor of the stack). Change it, then run <code class="font-mono">docker compose up -d</code> — the new address, certificate mode and proxy settings apply on the next start.</p>'
+        . $code("# Public name people type. Empty = local demo on http://localhost\nTICKETHUB_DOMAIN=helpdesk.example.com\n\n# auto     = Let's Encrypt (public site, ports 80+443 open to the internet)\n# dns      = Let's Encrypt via your DNS provider (internal sites; see docs/https.md)\n# files    = your own certificate: certs/tls.crt + tls.key\n# internal = TicketHub's own authority (install its root on client PCs)\n# upstream = something in front already does HTTPS\nTICKETHUB_TLS=auto");
 } else {
     $howto = '<p>From the TicketHub folder on the server:</p>'
         . $code('php spark tickethub:url https://helpdesk.example.com/')

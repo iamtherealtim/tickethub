@@ -26,9 +26,16 @@ Every seeded account signs in with the password `password` and is asked to
 change it. `maya.ortiz@tickethub.co` is an Administrator, `devin.park@…` an
 Agent, `jordan.whitfield@…` a Requester.
 
-Prefer Docker? `cp docker/.env.docker.example .env.docker` and
-`docker compose up -d --build` gives you the same thing on http://localhost:8080
-(set `CI_ENVIRONMENT=development` in `.env.docker` for the debug toolbar).
+Prefer Docker? From a clone:
+
+```bash
+cd docker
+cp .env.example .env      # set DB_PASSWORD; CI_ENVIRONMENT=development for the debug toolbar
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
+```
+
+That builds the images from your checkout (plain `docker compose up` pulls
+the published ones instead) and serves it on http://localhost.
 
 Useful commands while developing:
 

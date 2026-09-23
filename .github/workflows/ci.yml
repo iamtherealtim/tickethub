@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: ["**"]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -148,6 +149,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     timeout-minutes: 30
+    env:
+      # Every `docker compose` below: the published compose file + the build
+      # overlay. The project directory is docker/, so settings come from docker/.env.
+      COMPOSE_FILE: docker/compose.yaml:docker/compose.build.yaml
     steps:
       - uses: actions/checkout@v7
 
@@ -166,6 +171,7 @@ jobs:
           v -e TICKETHUB_DOMAIN=
           v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=auto -e TICKETHUB_ACME_EMAIL=ci@example.com
           v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=internal
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=internal -e TICKETHUB_HTTPS_BIND=192.168.1.51:8443
           v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=files
           v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=upstream -e TICKETHUB_UPSTREAM_PROXIES=10.0.0.5/32
           # Dummy credentials in the providers' real formats (the modules check the shape).
@@ -188,15 +194,29 @@ jobs:
           bad -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=bogus
           bad -e "TICKETHUB_DOMAIN=not a host"
 
-      - name: Configure the stack (internal CA on tickethub.test)
+      # The compose file users get, exactly — plus compose.build.yaml so this
+      # run tests the images built from this commit, not the published ones.
+      - name: The published compose file stands on its own
         run: |
-          cp docker/.env.docker.example .env.docker
-          sed -i -e 's/^TICKETHUB_DOMAIN=.*/TICKETHUB_DOMAIN=tickethub.test/' -e 's/^TICKETHUB_TLS=.*/TICKETHUB_TLS=internal/' .env.docker
-          grep -E '^TICKETHUB_' .env.docker
+          set -eu
+          cd docker
+          if out=$(docker compose -f compose.yaml config -q 2>&1); then echo "::error::no DB_PASSWORD should be an error"; exit 1; fi
+          echo "$out" | grep -q 'Set DB_PASSWORD' && echo "missing DB_PASSWORD -> $out"
+          cp .env.example .env
+          sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=ci-db-password/' .env
+          docker compose -f compose.yaml config -q && echo "compose.yaml + .env.example: valid"
+
+      - name: Configure the stack (internal CA on tickethub.test, bound to one IP)
+        run: |
+          cd docker
+          sed -i -e 's/^TICKETHUB_DOMAIN=.*/TICKETHUB_DOMAIN=tickethub.test/' -e 's/^TICKETHUB_TLS=.*/TICKETHUB_TLS=internal/' \
+                 -e 's/^TICKETHUB_HTTP_BIND=.*/TICKETHUB_HTTP_BIND=127.0.0.1:80/' -e 's/^TICKETHUB_HTTPS_BIND=.*/TICKETHUB_HTTPS_BIND=127.0.0.1:443/' .env
+          grep -E '^(TICKETHUB_|DB_)' .env
 
       - name: Start it
         run: |
-          docker compose up -d --build --wait --wait-timeout 300
+          docker compose build
+          docker compose up -d --wait --wait-timeout 300
           docker compose exec -T app php -m | grep -xE 'intl|gd|ldap|zip|mysqli|mbstring' | sort | tr '\n' ' '; echo
 
       - name: HTTPS, redirect, certificate and sign-in
@@ -235,23 +255,23 @@ jobs:
           case "$loc" in *index.php*) echo "::error::links carry /index.php/ (app.indexPage)"; exit 1;; esac
           grep -q '#HttpOnly_tickethub.test.*TRUE' $J || { echo "::error::session cookie is not Secure"; cat $J; exit 1; }
 
-      - name: Switch to the local demo; the change must apply on restart
+      - name: Switch to the local demo on port 8081; the change must apply on restart
         run: |
           set -eu
-          sed -i 's/^TICKETHUB_DOMAIN=.*/TICKETHUB_DOMAIN=/' .env.docker
+          sed -i -e 's/^TICKETHUB_DOMAIN=.*/TICKETHUB_DOMAIN=/' -e 's/^TICKETHUB_HTTP_BIND=.*/TICKETHUB_HTTP_BIND=8081/' docker/.env
           docker compose up -d --wait --wait-timeout 300
           docker compose exec -T app php spark tickethub:url | tee /tmp/url.txt
-          grep -q 'http://localhost/' /tmp/url.txt
+          grep -q 'http://localhost:8081/' /tmp/url.txt
           grep -q 'HTTPS enforced:   no' /tmp/url.txt
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/login); echo "http://localhost/login -> $code"; test "$code" = 200
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/login); echo "http://localhost:8081/login -> $code"; test "$code" = 200
           pw=$(docker compose exec -T app php spark tickethub:setup --email ci-admin@example.com --force | awk '/Temporary password/{getline; print $1}')
           J=/tmp/jar2; rm -f $J
-          tok=$(curl -s -c $J -b $J http://localhost/login | grep -o 'name="csrf_[a-z_]*" value="[^"]*"' | head -1)
+          tok=$(curl -s -c $J -b $J http://localhost:8081/login | grep -o 'name="csrf_[a-z_]*" value="[^"]*"' | head -1)
           name=$(echo "$tok" | sed 's/name="\([^"]*\)".*/\1/'); val=$(echo "$tok" | sed 's/.*value="\([^"]*\)"/\1/')
           loc=$(curl -s -c $J -b $J -o /dev/null -w '%{redirect_url}' --data-urlencode "$name=$val" \
-                --data-urlencode "email=ci-admin@example.com" --data-urlencode "password=$pw" http://localhost/login)
+                --data-urlencode "email=ci-admin@example.com" --data-urlencode "password=$pw" http://localhost:8081/login)
           echo "sign-in -> $loc"
-          case "$loc" in http://localhost/*) ;; *) echo "::error::unexpected redirect"; exit 1;; esac
+          case "$loc" in http://localhost:8081/*) ;; *) echo "::error::unexpected redirect"; exit 1;; esac
           case "$loc" in */login) echo "::error::sign-in over plain http was rejected (Secure cookie?)"; exit 1;; esac
 
       - name: Logs
@@ -279,3 +299,62 @@ jobs:
           tags: tickethub:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Publishes ghcr.io/iamtherealtim/tickethub and tickethub-caddy — only after
+  # every check above has passed, and only for main (tag "edge") and release
+  # tags v1.2.3 (tags "1.2.3", "1.2", "1", "latest"). amd64 + arm64.
+  publish:
+    name: Publish images (${{ matrix.image.name }})
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [lint, css, tests, stack, docker-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: tickethub, context: ".", file: Dockerfile, title: "TicketHub", description: "Self-hosted IT service desk (Apache + PHP). Run with docker/compose.yaml." }
+          - { name: tickethub-caddy, context: docker/caddy, file: docker/caddy/Dockerfile, title: "TicketHub Caddy", description: "HTTPS front end for TicketHub: Let's Encrypt, DNS challenge, own or internal certificates." }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image.name }}
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=sha-,format=short
+          labels: |
+            org.opencontainers.image.title=${{ matrix.image.title }}
+            org.opencontainers.image.description=${{ matrix.image.description }}
+            org.opencontainers.image.licenses=MIT
+          annotations: |
+            org.opencontainers.image.description=${{ matrix.image.description }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.file }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          cache-from: type=gha,scope=publish-${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=publish-${{ matrix.image.name }}
