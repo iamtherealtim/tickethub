@@ -15,7 +15,7 @@ COPY . .
 # mbstring, ldap, …) are installed into the runtime image below.
 RUN composer install --no-dev --no-interaction --no-progress --optimize-autoloader --no-scripts --ignore-platform-reqs
 
-FROM php:8.4-apache
+FROM php:8.5-apache
 
 # System libraries for the PHP extensions TicketHub uses.
 RUN set -eux; \
