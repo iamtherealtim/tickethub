@@ -125,8 +125,19 @@ abstract class FeatureTestCase extends CIUnitTestCase
         if ($this->migrate === false) {
             return;
         }
+        // Deliberately not $this->db->listTables(): the 'tests' group's
+        // connection is shared across test methods and listTables() caches
+        // its result on it (BaseConnection::$dataCache['table_names']). A
+        // later test can then read a snapshot an earlier test took
+        // mid-migration and miss tables that snapshot predates, which then
+        // survive to collide with the next migrate(). information_schema is
+        // always a fresh read.
+        $names = $this->db->query(
+            'SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()'
+        )->getResultArray();
         $this->db->query('SET FOREIGN_KEY_CHECKS = 0');
-        foreach ($this->db->listTables() as $table) {
+        foreach ($names as $row) {
+            $table = $row['table_name'] ?? $row['TABLE_NAME'];
             $this->db->query('DROP TABLE IF EXISTS ' . $this->db->escapeIdentifiers($table));
         }
         $this->db->query('SET FOREIGN_KEY_CHECKS = 1');
