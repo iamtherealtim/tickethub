@@ -1,0 +1,4 @@
+# Certificates and keys never go into git.
+*
+!.gitignore
+!README.md

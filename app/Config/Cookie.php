@@ -109,9 +109,12 @@ class Cookie extends BaseConfig
     {
         parent::__construct();
 
-        // Production is HTTPS-only (see App::$forceGlobalSecureRequests), so the
-        // session/CSRF cookies must never travel over plain HTTP there. Dev runs on
-        // http://localhost, where a Secure cookie would simply never be sent.
-        $this->secure = ENVIRONMENT === 'production';
+        // Whenever the site is HTTPS-only (see App::$forceGlobalSecureRequests) the
+        // session/CSRF cookies must never travel over plain HTTP. On a plain-http
+        // site (dev, a localhost demo) a Secure cookie would simply never be sent
+        // and nobody could sign in. An explicit cookie.secure in .env still wins.
+        if (env('cookie.secure') === null) {
+            $this->secure = config(App::class)->forceGlobalSecureRequests;
+        }
     }
 }

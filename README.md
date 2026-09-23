@@ -68,23 +68,40 @@ no queue workers, no Composer at runtime. Clone it, point a web server at
 ## Quick start with Docker
 
 ```bash
-cp docker/.env.docker.example .env.docker      # edit the passwords
-docker compose up -d --build                   # app on http://localhost:8080
+cp docker/.env.docker.example .env.docker      # set TICKETHUB_DOMAIN and the passwords
+docker compose up -d --build
 docker compose exec app php spark tickethub:setup --email you@company.com --name "Your Name"
 ```
 
-The first command configures the stack, the second builds the image, starts
-MariaDB, runs the migrations and the scheduler, and the third prints a
-one-time password for the first Administrator. Sign in at
-http://localhost:8080/login and choose your own.
+The first command configures the stack, and the second builds it and starts
+it. The third prints a one-time password for the first Administrator. Sign in
+at `https://<your domain>/login`, or at http://localhost/login if you left
+`TICKETHUB_DOMAIN` empty for a local try-out, and choose your own password.
 
-What is running: `app` (Apache + PHP 8.4, `public/` as document root), `db`
-(MariaDB 11 on a named volume) and `cron` (the same image looping over the
-[scheduled commands](#cron-jobs)). Attachments, sessions and logs live on the
-`app_writable` volume. `docker/entrypoint.sh` writes the application `.env`
-from the `.env.docker` values on first boot; mount your own `.env` into the
-container to take over. Set `APP_BASE_URL` to your public `https://` URL and
-put a TLS-terminating proxy in front before exposing it.
+**HTTPS comes with it.** Set `TICKETHUB_DOMAIN=helpdesk.example.com` and pick
+where the certificate comes from with `TICKETHUB_TLS`:
+
+| `TICKETHUB_TLS` | For |
+|---|---|
+| `auto` | Public sites: a free Let's Encrypt certificate, renewed automatically |
+| `dns` | Internal sites on a public domain: Let's Encrypt via Cloudflare, Azure DNS or Route 53 |
+| `files` | Your own certificate, e.g. from your company CA, in `docker/certs/` |
+| `internal` | Anything else: TicketHub's own authority; install its root on client PCs once |
+| `upstream` | A load balancer or tunnel in front already does HTTPS |
+
+Change `.env.docker` any time and run `docker compose up -d` again to apply it.
+**Admin → Address & HTTPS** shows whether the address, HTTPS and certificate
+are right, and how to fix them if not. The full guide is
+[docs/https.md](docs/https.md).
+
+What's running:
+- `caddy` on ports 80 and 443: HTTPS and certificates.
+- `app`: Apache + PHP 8.4, with `public/` as the document root.
+- `db`: MariaDB 11 on a named volume.
+- `cron`: the same image as `app`, looping over the [scheduled commands](#cron-jobs).
+
+Attachments, sessions and logs live on the `app_writable` volume, and
+certificates on `caddy_data`.
 
 ## Manual install
 
@@ -101,15 +118,18 @@ Supported browsers: current Chrome, Edge and Firefox (128+), and Safari 16.4+.
 ```bash
 git clone https://github.com/iamtherealtim/tickethub.git tickethub && cd tickethub
 composer install --no-dev           # optional — only needed for SAML sign-in
-cp env.production.example .env      # then edit: baseURL, database.default.*
+cp env.production.example .env      # then edit: database.default.*
 php spark key:generate              # writes encryption.key into .env
 php spark migrate --all             # creates the schema (no demo data)
-php spark tickethub:setup --email you@company.com --name "Your Name"
+php spark tickethub:setup --email you@company.com --name "Your Name" --url https://helpdesk.example.com/
 ```
 
 `tickethub:setup` creates the first Administrator and prints a one-time
 password; you choose your own at first sign-in. It refuses to run when an
-Administrator already exists unless you pass `--force`.
+Administrator already exists unless you pass `--force`. `--url` sets the site
+address. Change it later with `php spark tickethub:url <address>`. For HTTPS,
+put Caddy, nginx or Apache in front; [docs/https.md](docs/https.md) has
+copy-paste configs, including for a reverse proxy or load balancer.
 
 For a local demo, keep `CI_ENVIRONMENT = development` (copy `env` instead of
 the production template) and run `php spark db:seed TicketHubSeeder` — this
@@ -122,10 +142,13 @@ a web server: `php spark serve` and open http://localhost:8080.
 
 Copy `env.production.example` to `.env` and fill in the values. In short:
 
-1. **`CI_ENVIRONMENT = production`** — turns off the debug toolbar and
-   detailed error pages, enables HTTPS-only + HSTS, marks cookies `Secure`,
-   hides the demo-login block, and blocks the demo seeder.
-2. **`app.baseURL`** — the public `https://` URL, with a trailing slash.
+1. **`CI_ENVIRONMENT = production`**: turns off the debug toolbar and
+   detailed error pages, hides the demo-login block, and blocks the demo
+   seeder. With an `https://` address it also enforces HTTPS: http requests
+   are redirected, HSTS is sent, and cookies are marked `Secure`.
+2. **Site address**: `php spark tickethub:url https://helpdesk.example.com/`.
+   Behind a separate proxy or load balancer, add `--trust-proxy=<its IP>`,
+   or you'll get a redirect loop. Then check **Admin → Address & HTTPS**.
 3. **`encryption.key`** — run `php spark key:generate`. Without it, SMTP /
    Entra / PDQ / webhook secrets are stored in plaintext and the Admin page
    shows a warning.

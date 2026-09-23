@@ -143,6 +143,116 @@ jobs:
           path: build/logs/
           if-no-files-found: ignore
 
+  stack:
+    name: Docker stack (HTTPS + sign-in)
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the Caddy image
+        run: docker build -t tickethub-caddy:latest docker/caddy
+
+      # Every TICKETHUB_TLS mode must produce a config Caddy accepts, and a
+      # broken setting must stop with a message instead of a bad config.
+      - name: Validate the generated Caddy config for every mode
+        run: |
+          set -eu
+          mkdir -p /tmp/certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=tickethub.test" \
+            -addext "subjectAltName=DNS:tickethub.test" -keyout /tmp/certs/tls.key -out /tmp/certs/tls.crt 2>/dev/null
+          v() { echo "::group::$*"; docker run --rm -v /tmp/certs:/certs:ro "$@" tickethub-caddy:latest tickethub-caddy validate; echo "::endgroup::"; }
+          v -e TICKETHUB_DOMAIN=
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=auto -e TICKETHUB_ACME_EMAIL=ci@example.com
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=internal
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=files
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=upstream -e TICKETHUB_UPSTREAM_PROXIES=10.0.0.5/32
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=cloudflare -e CF_API_TOKEN=x
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=azure \
+            -e AZURE_TENANT_ID=x -e AZURE_CLIENT_ID=x -e AZURE_CLIENT_SECRET=x -e AZURE_SUBSCRIPTION_ID=x -e AZURE_RESOURCE_GROUP_NAME=x
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=route53 -e AWS_ACCESS_KEY_ID=x -e AWS_SECRET_ACCESS_KEY=x
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=route53
+          bad() {
+            if out=$(docker run --rm "$@" tickethub-caddy:latest tickethub-caddy validate 2>&1); then
+              echo "::error::expected failure for: $*"; echo "$out"; exit 1
+            fi
+            echo "$out" | grep -q 'ERROR:' || { echo "::error::no explanation for: $*"; echo "$out"; exit 1; }
+            echo "rejected as expected: $(echo "$out" | grep ERROR:)"
+          }
+          bad -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=files
+          bad -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns
+          bad -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=cloudflare
+          bad -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=bogus
+          bad -e "TICKETHUB_DOMAIN=not a host"
+
+      - name: Configure the stack (internal CA on tickethub.test)
+        run: |
+          cp docker/.env.docker.example .env.docker
+          sed -i -e 's/^TICKETHUB_DOMAIN=.*/TICKETHUB_DOMAIN=tickethub.test/' -e 's/^TICKETHUB_TLS=.*/TICKETHUB_TLS=internal/' .env.docker
+          grep -E '^TICKETHUB_' .env.docker
+
+      - name: Start it
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: HTTPS, redirect, certificate and sign-in
+        run: |
+          set -eu
+          R="--resolve tickethub.test:443:127.0.0.1 --resolve tickethub.test:80:127.0.0.1"
+          code=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' $R http://tickethub.test/login)
+          echo "http  -> $code"; case "$code" in 30[178]\ https://tickethub.test/login) ;; *) echo "::error::http did not redirect to https"; exit 1;; esac
+          curl -skfsS -D /tmp/h $R https://tickethub.test/login -o /tmp/login.html
+          grep -qi '^strict-transport-security:' /tmp/h || { echo "::error::no HSTS header over https"; cat /tmp/h; exit 1; }
+          # The app, not just Caddy, must see the request as secure (trusted proxy).
+          docker compose exec -T app php spark tickethub:url | tee /tmp/url.txt
+          grep -q 'https://tickethub.test/' /tmp/url.txt
+          grep -q 'HTTPS enforced:   yes' /tmp/url.txt
+          # Certificate issued by the internal CA, as the Address & HTTPS tab sees it.
+          docker compose exec -T app php -r 'require "app/Libraries/SiteAddress.php"; echo json_encode(App\Libraries\SiteAddress::inspect("caddy", 443, "tickethub.test"));' | tee /tmp/cert.json
+          jq -e '(.names | index("tickethub.test")) and (.issuerCN | test("TicketHub"))' /tmp/cert.json
+          # Root certificate published for the download button (within ~30 s).
+          for i in $(seq 1 30); do docker compose exec -T app test -s /caddy-data/tickethub-root-ca.crt && break; sleep 2; done
+          docker compose exec -T app grep -q 'BEGIN CERTIFICATE' /caddy-data/tickethub-root-ca.crt
+          # A real sign-in over HTTPS: Secure cookies + CSRF + proxy trust together.
+          pw=$(docker compose exec -T app php spark tickethub:setup --email ci-admin@example.com | awk '/Temporary password/{getline; print $1}')
+          test -n "$pw"
+          J=/tmp/jar; rm -f $J
+          tok=$(curl -sk -c $J -b $J $R https://tickethub.test/login | grep -o 'name="csrf_[a-z_]*" value="[^"]*"' | head -1)
+          name=$(echo "$tok" | sed 's/name="\([^"]*\)".*/\1/'); val=$(echo "$tok" | sed 's/.*value="\([^"]*\)"/\1/')
+          loc=$(curl -sk -c $J -b $J $R -o /dev/null -w '%{redirect_url}' --data-urlencode "$name=$val" \
+                --data-urlencode "email=ci-admin@example.com" --data-urlencode "password=$pw" https://tickethub.test/login)
+          echo "sign-in -> $loc"
+          case "$loc" in https://tickethub.test/*) ;; *) echo "::error::sign-in did not stay on https"; exit 1;; esac
+          case "$loc" in */login) echo "::error::sign-in was rejected"; exit 1;; esac
+          grep -q '#HttpOnly_tickethub.test.*TRUE' $J || { echo "::error::session cookie is not Secure"; cat $J; exit 1; }
+
+      - name: Switch to the local demo; the change must apply on restart
+        run: |
+          set -eu
+          sed -i 's/^TICKETHUB_DOMAIN=.*/TICKETHUB_DOMAIN=/' .env.docker
+          docker compose up -d --wait --wait-timeout 300
+          docker compose exec -T app php spark tickethub:url | tee /tmp/url.txt
+          grep -q 'http://localhost/' /tmp/url.txt
+          grep -q 'HTTPS enforced:   no' /tmp/url.txt
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/login); echo "http://localhost/login -> $code"; test "$code" = 200
+          pw=$(docker compose exec -T app php spark tickethub:setup --email ci-admin@example.com --force | awk '/Temporary password/{getline; print $1}')
+          J=/tmp/jar2; rm -f $J
+          tok=$(curl -s -c $J -b $J http://localhost/login | grep -o 'name="csrf_[a-z_]*" value="[^"]*"' | head -1)
+          name=$(echo "$tok" | sed 's/name="\([^"]*\)".*/\1/'); val=$(echo "$tok" | sed 's/.*value="\([^"]*\)"/\1/')
+          loc=$(curl -s -c $J -b $J -o /dev/null -w '%{redirect_url}' --data-urlencode "$name=$val" \
+                --data-urlencode "email=ci-admin@example.com" --data-urlencode "password=$pw" http://localhost/login)
+          echo "sign-in -> $loc"
+          case "$loc" in http://localhost/*) ;; *) echo "::error::unexpected redirect"; exit 1;; esac
+          case "$loc" in */login) echo "::error::sign-in over plain http was rejected (Secure cookie?)"; exit 1;; esac
+
+      - name: Logs
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Stop
+        if: always()
+        run: docker compose down -v
+
   docker-build:
     name: Docker image builds
     runs-on: ubuntu-latest
