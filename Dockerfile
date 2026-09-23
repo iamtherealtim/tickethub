@@ -1,4 +1,4 @@
-# TicketHub — production-style image: Apache + PHP 8.2, document root at public/.
+# TicketHub — production-style image: Apache + PHP 8.4, document root at public/.
 #
 #   docker compose up -d           # app on http://localhost:8080
 #   docker build -t tickethub .    # image only
@@ -15,7 +15,7 @@ COPY . .
 # mbstring, ldap, …) are installed into the runtime image below.
 RUN composer install --no-dev --no-interaction --no-progress --optimize-autoloader --no-scripts --ignore-platform-reqs
 
-FROM php:8.2-apache
+FROM php:8.4-apache
 
 # System libraries for the PHP extensions TicketHub uses.
 RUN set -eux; \

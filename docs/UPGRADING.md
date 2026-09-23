@@ -7,6 +7,13 @@ number.
 
 ## Steps
 
+0. **Check the PHP version** (`php -v`, and the version your web server runs;
+   they can differ). Releases after 1.0.0 need **PHP 8.3 or newer**. On an
+   older PHP the site and `spark` stop with a version message instead of
+   running, so upgrade PHP first. Ubuntu 24.04 ships 8.3; Debian 12 ships
+   8.2 and needs a newer PHP from a backport repository. The Docker image
+   already includes PHP 8.4.
+
 1. **Back up** the database and the `writable/` directory (attachments,
    sessions, logs live there):
 

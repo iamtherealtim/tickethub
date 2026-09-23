@@ -8,7 +8,7 @@ Security problems go through [SECURITY.md](SECURITY.md), never a public issue.
 
 ## Development setup
 
-Requirements: PHP 8.2+ with `intl`, `mbstring`, `mysqli`, `curl`, `openssl`,
+Requirements: PHP 8.3+ with `intl`, `mbstring`, `mysqli`, `curl`, `openssl`,
 `gd` (and `ldap` if you work on directory sign-in), MySQL 8 / MariaDB 10.6+,
 and Composer (for the test tooling only — the framework is vendored in `system/`).
 

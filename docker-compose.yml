@@ -6,7 +6,7 @@
 #
 # Then open http://localhost:8080.
 #
-# app   Apache + PHP 8.2 serving public/, migrations run on start (see docker/entrypoint.sh)
+# app   Apache + PHP 8.4 serving public/, migrations run on start (see docker/entrypoint.sh)
 # db    MariaDB 11 with a persistent volume
 # cron  same image, runs the schedulers in a loop (see docker/cron.sh)
 
