@@ -39,8 +39,14 @@ class App extends BaseConfig
      * Typically, this will be your `index.php` file, unless you've renamed it to
      * something else. If you have configured your web server to remove this file
      * from your site URIs, set this variable to an empty string.
+     *
+     * TicketHub: empty, because every supported setup rewrites clean URLs
+     * (public/.htaccess, the nginx/Caddy configs in docs/https.md, the Docker
+     * image, `spark serve`). With 'index.php' every emailed link and SSO callback
+     * came out as https://host/index.php/…. Set app.indexPage = 'index.php' in
+     * .env only on a server that cannot rewrite.
      */
-    public string $indexPage = 'index.php';
+    public string $indexPage = '';
 
     /**
      * --------------------------------------------------------------------------

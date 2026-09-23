@@ -232,6 +232,7 @@ jobs:
           echo "sign-in -> $loc"
           case "$loc" in https://tickethub.test/*) ;; *) echo "::error::sign-in did not stay on https"; exit 1;; esac
           case "$loc" in */login) echo "::error::sign-in was rejected"; exit 1;; esac
+          case "$loc" in *index.php*) echo "::error::links carry /index.php/ (app.indexPage)"; exit 1;; esac
           grep -q '#HttpOnly_tickethub.test.*TRUE' $J || { echo "::error::session cookie is not Secure"; cat $J; exit 1; }
 
       - name: Switch to the local demo; the change must apply on restart
