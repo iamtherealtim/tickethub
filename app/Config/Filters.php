@@ -82,7 +82,10 @@ class Filters extends BaseFilters
         'before' => [
             // 'honeypot',
             'locale' => ['except' => ['api/*']],
-            'csrf' => ['except' => ['api/*']],
+            // auth/saml/acs: the POST is from the IdP, not a form of ours — it
+            // carries no CSRF token and cannot be made to (the signed SAML
+            // response itself is what proves the request is genuine).
+            'csrf' => ['except' => ['api/*', 'auth/saml/acs']],
             // A password change/reset bumps users.session_epoch; sessions minted
             // before that are signed out on their next request.
             'sessionEpoch' => ['except' => ['api/*']],

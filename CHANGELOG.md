@@ -10,6 +10,14 @@ Upgrade notes for operators live in [docs/UPGRADING.md](docs/UPGRADING.md).
 
 ### Added
 
+- **SAML 2.0 single sign-on** — alongside Entra ID, generic OIDC and LDAP.
+  Metadata-URL import for the identity provider's entity ID, SSO URL and
+  signing certificate, or manual entry; attribute-based role mapping.
+  Signature verification is delegated to `onelogin/php-saml` rather than
+  hand-rolled; every assertion must be signed. This is the one optional
+  feature that needs `composer install` — everything else still runs
+  without it.
+
 ### Changed
 
 ### Fixed

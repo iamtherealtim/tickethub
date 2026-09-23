@@ -6,9 +6,10 @@ use App\Controllers\BaseController;
 use App\Libraries\Audit;
 use App\Libraries\Ldap;
 use App\Libraries\Oidc;
+use App\Libraries\Saml;
 use App\Libraries\Settings;
 
-/** Admin → Identity tab: MFA policy, generic OIDC, LDAP/AD. Routes in Config/Routes/identity.php. */
+/** Admin → Identity tab: MFA policy, generic OIDC, LDAP/AD, SAML. Routes in Config/Routes/identity.php. */
 class IdentityController extends BaseController
 {
     private const TAB = '/app/admin/identity';
@@ -137,6 +138,60 @@ class IdentityController extends BaseController
     {
         $r = Ldap::test();
         $this->toast(($r['ok'] ? 'LDAP OK — ' : 'LDAP test failed — ') . $r['message'], $r['ok'] ? 'ok' : 'warn');
+
+        return redirect()->to(self::TAB);
+    }
+
+    public function saveSaml()
+    {
+        if (! Saml::available()) {
+            $this->toast('SAML settings saved — but the onelogin/php-saml package is not installed, so sign-in stays off. Run composer install.', 'warn');
+        }
+        $p = $this->request->getPost();
+        Settings::saveMany([
+            'saml_enabled'       => isset($p['saml_enabled']) ? '1' : '0',
+            'saml_idp_entity_id' => trim((string) ($p['saml_idp_entity_id'] ?? '')),
+            'saml_idp_sso_url'   => trim((string) ($p['saml_idp_sso_url'] ?? '')),
+            'saml_idp_x509cert'  => trim((string) ($p['saml_idp_x509cert'] ?? '')),
+            'saml_sp_entity_id'  => trim((string) ($p['saml_sp_entity_id'] ?? '')),
+            'saml_button_label'  => mb_substr(trim((string) ($p['saml_button_label'] ?? '')), 0, 40),
+            'saml_attr_email'    => trim((string) ($p['saml_attr_email'] ?? '')),
+            'saml_attr_name'     => trim((string) ($p['saml_attr_name'] ?? '')),
+            'saml_agent_attr'    => trim((string) ($p['saml_agent_attr'] ?? '')),
+            'saml_agent_value'   => trim((string) ($p['saml_agent_value'] ?? '')),
+            'saml_admin_attr'    => trim((string) ($p['saml_admin_attr'] ?? '')),
+            'saml_admin_value'   => trim((string) ($p['saml_admin_value'] ?? '')),
+        ]);
+        Audit::log('settings.saml', trim((string) ($p['saml_idp_entity_id'] ?? '')) ?: '(cleared)');
+        if (Saml::available()) {
+            $this->toast('SAML settings saved');
+        }
+
+        return redirect()->to(self::TAB);
+    }
+
+    /** Import entity ID, SSO URL and signing cert from the IdP's own metadata document. */
+    public function fetchSamlMetadata()
+    {
+        $url = trim((string) $this->request->getPost('saml_metadata_url'));
+        if ($url === '') {
+            $this->toast('Paste the identity provider\'s metadata URL first', 'warn');
+
+            return redirect()->to(self::TAB);
+        }
+
+        try {
+            $idp = Saml::fetchIdpMetadata($url);
+            Settings::saveMany([
+                'saml_idp_entity_id' => (string) $idp['entityId'],
+                'saml_idp_sso_url'   => (string) ($idp['singleSignOnService']['url'] ?? ''),
+                'saml_idp_x509cert'  => (string) $idp['x509cert'],
+            ]);
+            Audit::log('settings.saml_metadata_fetched', $url);
+            $this->toast('Imported entity ID, SSO URL and signing certificate from the metadata document');
+        } catch (\Throwable $e) {
+            $this->toast('Could not read that metadata document: ' . $e->getMessage(), 'warn');
+        }
 
         return redirect()->to(self::TAB);
     }

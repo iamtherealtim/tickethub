@@ -7,7 +7,11 @@
 !.env.example
 phpunit.xml
 
-# Dependencies and build output (Composer is only needed for the test suite)
+# Dependencies and build output. vendor/ is excluded from the HOST build
+# context on purpose — the Dockerfile's own `vendor` build stage runs
+# `composer install` inside the container (see Dockerfile) so the image never
+# ships whatever happens to be on the machine doing the build. composer.lock
+# stays IN the context; that stage needs it for a reproducible install.
 vendor/
 node_modules/
 build/
@@ -31,7 +35,6 @@ docs/
 .claude/
 .phpunit.result.cache
 phpunit.dist.xml
-composer.lock
 CONTRIBUTING.md
 CODE_OF_CONDUCT.md
 SECURITY.md

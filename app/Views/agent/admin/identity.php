@@ -1,9 +1,10 @@
 <?php
-/** Admin → Identity & 2FA tab body. Vars: $settings, $groups, $me, $inputCls, $mfaUsers, $ldapAvailable, $oidcCallback. */
+/** Admin → Identity & 2FA tab body. Vars: $settings, $groups, $me, $inputCls, $mfaUsers, $ldapAvailable, $oidcCallback, $samlAvailable, $samlAcsUrl, $samlMetadataUrl, $samlEntityId. */
 $s = static fn (string $k, string $d = '') => esc($settings[$k] ?? $d, 'attr');
 $mfaPolicy = $settings['mfa_required_roles'] ?? 'none';
 $oidcOn = ($settings['oidc_enabled'] ?? '0') === '1';
 $ldapOn = ($settings['ldap_enabled'] ?? '0') === '1';
+$samlOn = ($settings['saml_enabled'] ?? '0') === '1';
 $lbl = 'block text-[12px] font-medium text-ink-500 mb-1.5';
 $hint = 'text-[11.5px] text-faint mt-1';
 $check = 'w-[15px] h-[15px] rounded border-line';
@@ -130,6 +131,104 @@ $ghost = 'h-9 px-3.5 rounded-lg border border-line bg-white text-[13px] font-med
     </section>
   </form>
   <form method="post" action="<?= site_url('app/admin/identity/oidc/test') ?>" id="oidcTest" class="hidden"><?= csrf_field() ?></form>
+
+  <!-- ============ SAML 2.0 ============ -->
+  <form method="post" action="<?= site_url('app/admin/identity/saml') ?>">
+    <?= csrf_field() ?>
+    <section class="bg-white border border-line rounded-xl shadow-card">
+      <?= th_card_head('SAML 2.0 single sign-on', '<span class="' . ($samlOn && $samlAvailable ? 'text-brand' : 'text-faint') . ' font-semibold">' . ($samlAvailable ? ($samlOn ? 'Enabled' : 'Disabled') : 'Unavailable') . '</span>') ?>
+      <?php if (! $samlAvailable): ?>
+      <div class="mx-4 mt-4 rounded-lg border border-alert/40 bg-alert/5 px-3.5 py-3 text-[13px] text-ink flex items-start gap-2.5">
+        <span class="text-alert mt-0.5"><?= th_icon('warn', 'w-4 h-4') ?></span>
+        <div><b>onelogin/php-saml is not installed.</b> <span class="text-muted">Run <code class="font-mono">composer install</code> on this server (the Docker image already includes it). The settings below are kept but sign-in stays off until then.</span></div>
+      </div>
+      <?php endif ?>
+      <fieldset <?= $samlAvailable ? '' : 'disabled' ?> class="<?= $samlAvailable ? '' : 'opacity-60' ?>">
+      <div class="p-4 grid sm:grid-cols-2 gap-3.5">
+        <label class="sm:col-span-2 flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">
+          <input type="checkbox" name="saml_enabled" value="1" <?= $samlOn ? 'checked' : '' ?> class="<?= $check ?>">
+          <span class="text-[13px] font-medium text-ink">Show the SAML single sign-on button on the login page</span>
+          <span class="text-[12px] text-muted">— for Okta, OneLogin, Azure AD (SAML app), ADFS, PingFederate or any SAML 2.0 identity provider</span>
+        </label>
+
+        <div class="sm:col-span-2 rounded-lg border border-line bg-canvas p-3">
+          <label class="<?= $lbl ?>">Import from the identity provider's metadata URL</label>
+          <div class="flex flex-wrap gap-2">
+            <input form="samlFetch" name="saml_metadata_url" placeholder="https://idp.example.com/metadata" class="<?= $inputCls ?> font-mono text-[12px] flex-1 min-w-[240px]">
+            <button type="submit" form="samlFetch" class="<?= $ghost ?> h-9">Fetch &amp; fill in</button>
+          </div>
+          <p class="<?= $hint ?>">Fetched over HTTPS with certificate validation, then the fields below are filled in from it. You can also fill them in by hand.</p>
+        </div>
+
+        <div class="sm:col-span-2">
+          <label class="<?= $lbl ?>">Identity provider entity ID</label>
+          <input name="saml_idp_entity_id" value="<?= $s('saml_idp_entity_id') ?>" placeholder="https://idp.example.com/entity" class="<?= $inputCls ?> font-mono text-[12px]">
+        </div>
+        <div class="sm:col-span-2">
+          <label class="<?= $lbl ?>">Identity provider SSO URL</label>
+          <input name="saml_idp_sso_url" value="<?= $s('saml_idp_sso_url') ?>" placeholder="https://idp.example.com/sso/saml" class="<?= $inputCls ?> font-mono text-[12px]">
+        </div>
+        <div class="sm:col-span-2">
+          <label class="<?= $lbl ?>">Identity provider signing certificate</label>
+          <textarea name="saml_idp_x509cert" rows="4" placeholder="-----BEGIN CERTIFICATE-----" class="<?= $inputCls ?> font-mono text-[11.5px] leading-snug"><?= esc($settings['saml_idp_x509cert'] ?? '') ?></textarea>
+          <p class="<?= $hint ?>">PEM format, with or without the BEGIN/END lines. TicketHub never trusts a certificate carried inside a message — only the one saved here.</p>
+        </div>
+        <div>
+          <label class="<?= $lbl ?>">Our entity ID (optional override)</label>
+          <input name="saml_sp_entity_id" value="<?= $s('saml_sp_entity_id') ?>" placeholder="<?= esc($samlEntityId) ?>" class="<?= $inputCls ?> font-mono text-[12px]">
+          <p class="<?= $hint ?>">Leave blank to use the metadata URL below, which is what most providers expect.</p>
+        </div>
+        <div>
+          <label class="<?= $lbl ?>">Button label</label>
+          <input name="saml_button_label" value="<?= $s('saml_button_label') ?>" placeholder="Sign in with SSO" maxlength="40" class="<?= $inputCls ?>">
+        </div>
+
+        <div class="sm:col-span-2 text-[11px] font-semibold uppercase tracking-[.09em] text-faint mt-1">Attribute mapping (optional)</div>
+        <div>
+          <label class="<?= $lbl ?>">Email attribute</label>
+          <input name="saml_attr_email" value="<?= $s('saml_attr_email') ?>" placeholder="leave blank to use the NameID" class="<?= $inputCls ?> font-mono text-[12px]">
+        </div>
+        <div>
+          <label class="<?= $lbl ?>">Name attribute</label>
+          <input name="saml_attr_name" value="<?= $s('saml_attr_name') ?>" placeholder="displayName" class="<?= $inputCls ?> font-mono text-[12px]">
+        </div>
+
+        <div class="sm:col-span-2 text-[11px] font-semibold uppercase tracking-[.09em] text-faint mt-1">Role mapping from attributes (optional)</div>
+        <div class="grid grid-cols-[1fr_1fr] gap-2">
+          <div><label class="<?= $lbl ?>">Agent attribute</label><input name="saml_agent_attr" value="<?= $s('saml_agent_attr') ?>" placeholder="groups" class="<?= $inputCls ?> font-mono text-[12px]"></div>
+          <div><label class="<?= $lbl ?>">contains value</label><input name="saml_agent_value" value="<?= $s('saml_agent_value') ?>" placeholder="servicedesk" class="<?= $inputCls ?> font-mono text-[12px]"></div>
+        </div>
+        <div class="grid grid-cols-[1fr_1fr] gap-2">
+          <div><label class="<?= $lbl ?>">Administrator attribute</label><input name="saml_admin_attr" value="<?= $s('saml_admin_attr') ?>" placeholder="groups" class="<?= $inputCls ?> font-mono text-[12px]"></div>
+          <div><label class="<?= $lbl ?>">contains value</label><input name="saml_admin_value" value="<?= $s('saml_admin_value') ?>" placeholder="it-admins" class="<?= $inputCls ?> font-mono text-[12px]"></div>
+        </div>
+        <p class="sm:col-span-2 <?= $hint ?> !mt-0">With either mapping set, everyone else becomes a Requester on their next sign-in; Supervisors and the last Administrator are never demoted. Leave both blank to keep roles as set under Agents &amp; roles.</p>
+
+        <div class="sm:col-span-2 rounded-lg border border-line bg-canvas p-3">
+          <div class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint mb-1.5">Provider setup</div>
+          <ol class="text-[12.5px] text-ink-500 leading-relaxed list-decimal ml-4 space-y-1">
+            <li>Create a SAML application at the provider and give it our metadata, either as a URL or by downloading it:
+              <div class="mt-1"><code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5 select-all"><?= esc($samlMetadataUrl) ?></code></div>
+            </li>
+            <li>Or configure it by hand — ACS URL (Reply URL) and Entity ID:
+              <div class="mt-1 space-y-1">
+                <div><code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5 select-all"><?= esc($samlAcsUrl) ?></code></div>
+                <div><code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5 select-all"><?= esc($samlEntityId) ?></code></div>
+              </div>
+            </li>
+            <li>Send the email address in the NameID (format: emailAddress), or map an attribute above. New people are created as Requesters on first sign-in (email match signs existing accounts in).</li>
+          </ol>
+        </div>
+      </div>
+      <div class="<?= $footer ?>">
+        <span class="text-[12px] text-muted">Signed assertions only — TicketHub never accepts an unsigned response.</span>
+        <div class="flex-1"></div>
+        <button type="submit" class="<?= $primary ?>">Save settings</button>
+      </div>
+      </fieldset>
+    </section>
+  </form>
+  <form method="post" action="<?= site_url('app/admin/identity/saml/fetch-metadata') ?>" id="samlFetch"><?= csrf_field() ?></form>
 
   <!-- ============ LDAP / Active Directory ============ -->
   <form method="post" action="<?= site_url('app/admin/identity/ldap') ?>">
