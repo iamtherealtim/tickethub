@@ -168,10 +168,12 @@ jobs:
           v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=internal
           v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=files
           v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=upstream -e TICKETHUB_UPSTREAM_PROXIES=10.0.0.5/32
-          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=cloudflare -e CF_API_TOKEN=x
+          # Dummy credentials in the providers' real formats (the modules check the shape).
+          G=00000000-0000-0000-0000-000000000000
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=cloudflare -e CF_API_TOKEN=abcdefghijklmnopqrstuvwxyz0123456789ABCD
           v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=azure \
-            -e AZURE_TENANT_ID=x -e AZURE_CLIENT_ID=x -e AZURE_CLIENT_SECRET=x -e AZURE_SUBSCRIPTION_ID=x -e AZURE_RESOURCE_GROUP_NAME=x
-          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=route53 -e AWS_ACCESS_KEY_ID=x -e AWS_SECRET_ACCESS_KEY=x
+            -e AZURE_TENANT_ID=$G -e AZURE_CLIENT_ID=$G -e AZURE_CLIENT_SECRET=dummy-secret -e AZURE_SUBSCRIPTION_ID=$G -e AZURE_RESOURCE_GROUP_NAME=dns-rg
+          v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=route53 -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY
           v -e TICKETHUB_DOMAIN=tickethub.test -e TICKETHUB_TLS=dns -e TICKETHUB_DNS_PROVIDER=route53
           bad() {
             if out=$(docker run --rm "$@" tickethub-caddy:latest tickethub-caddy validate 2>&1); then
