@@ -15,13 +15,14 @@ and try to make reporting easy.
 
 **Please do not open a public issue or pull request for security problems.**
 
-Email **`security@<your-domain>`** instead.
+Use GitHub's private reporting instead:
+[github.com/iamtherealtim/tickethub/security/advisories/new](https://github.com/iamtherealtim/tickethub/security/advisories/new).
+It reaches the maintainer directly, stays private until a fix ships, and
+needs no email address on your end.
 
-> Maintainers: replace `security@<your-domain>` here and in
-> `CODE_OF_CONDUCT.md` with a monitored mailbox before publishing this
-> repository. If you use GitHub, also enable *Private vulnerability
-> reporting* under *Settings → Code security* so reports can come in through
-> the Security tab.
+If you would rather not use GitHub, open an issue asking for another way to
+reach us — say only that you have a security report, not the details — and
+we will follow up privately.
 
 Include as much of the following as you can:
 

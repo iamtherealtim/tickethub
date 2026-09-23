@@ -59,10 +59,12 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at the contact
-address listed in [SECURITY.md](SECURITY.md) (`security@<your-domain>` —
-maintainers: replace this with a monitored mailbox before publishing).
-All complaints will be reviewed and investigated promptly and fairly.
+reported privately through GitHub's advisory form at
+[github.com/iamtherealtim/tickethub/security/advisories/new](https://github.com/iamtherealtim/tickethub/security/advisories/new)
+— it works for conduct reports as well as security ones, and stays private
+between you and the maintainer. If you would rather not use GitHub, open an
+issue asking for another way to reach us without describing the incident
+there. All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.
