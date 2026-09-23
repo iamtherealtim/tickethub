@@ -142,7 +142,7 @@
         '<div data-canned-row="' + c.id + '" class="group flex items-start gap-2 px-3 py-2 cursor-pointer ' + (i === active ? 'bg-canvas' : 'hover:bg-canvas') + '">' +
         '<div class="min-w-0 flex-1"><div class="flex items-center gap-1.5">' +
         '<span class="text-[12.5px] font-medium text-ink truncate">' + escapeHtml(c.title) + '</span>' +
-        (c.shortcut ? '<code class="font-mono text-[10.5px] text-brand bg-brand-50 rounded px-1 truncate max-w-[140px]">/' + escapeHtml(c.shortcut) + '</code>' : '') +
+        (c.shortcut ? '<code class="font-mono text-[10.5px] text-brand bg-brand-50 rounded-sm px-1 truncate max-w-[140px]">/' + escapeHtml(c.shortcut) + '</code>' : '') +
         '<span class="text-[10px] uppercase tracking-wide text-faint ml-auto shrink-0">' + (scopeTag[c.scope] || '') + '</span></div>' +
         '<div class="text-[11.5px] text-muted truncate">' + escapeHtml(c.body.replace(/\s+/g, ' ').slice(0, 90)) + '</div></div>' +
         (c.mine ? '<button type="button" data-canned-del="' + c.id + '" title="Remove this response" class="shrink-0 w-6 h-6 grid place-items-center rounded-md text-faint opacity-0 group-hover:opacity-100 hover:text-alert hover:bg-alert-50"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>' : '') +

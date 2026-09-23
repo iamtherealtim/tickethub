@@ -19,8 +19,8 @@
   <div class="bg-white border border-line rounded-xl shadow-card p-5 mb-4">
     <div class="flex flex-wrap items-center gap-2">
       <span class="font-mono text-[11.5px] text-faint"><?= esc($c['code']) ?></span>
-      <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold <?= $stateCls ?>"><?= esc($c['state']) ?></span>
-      <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold <?= TH_RISK[$c['risk']] ?? 'bg-canvas text-muted border-line' ?>"><?= esc($c['risk']) ?> risk</span>
+      <span class="inline-flex items-center h-[20px] px-2 rounded-sm border text-[11px] font-semibold <?= $stateCls ?>"><?= esc($c['state']) ?></span>
+      <span class="inline-flex items-center h-[20px] px-2 rounded-sm border text-[11px] font-semibold <?= TH_RISK[$c['risk']] ?? 'bg-canvas text-muted border-line' ?>"><?= esc($c['risk']) ?> risk</span>
       <span class="text-[12px] text-muted"><?= esc($c['type']) ?></span>
       <?php if ($canManage): ?>
       <span class="ml-auto flex items-center gap-2">

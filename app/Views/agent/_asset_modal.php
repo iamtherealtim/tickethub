@@ -42,7 +42,7 @@ $footer = (! empty($canManage)
     <span class="inline-flex items-center h-[22px] px-2 rounded-md border text-[11px] font-semibold <?= $statusCls ?>"><?= esc($a['status']) ?></span>
     <span class="text-[12.5px] text-muted"><?= esc($a['type']) ?></span>
     <?php if (! empty($a['pdq_device_id'])): ?>
-      <span class="inline-flex items-center h-[18px] px-1.5 rounded bg-violet-50 text-violet text-[9.5px] font-bold uppercase tracking-wide" title="Synced from PDQ Connect">PDQ</span>
+      <span class="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-violet-50 text-violet text-[9.5px] font-bold uppercase tracking-wide" title="Synced from PDQ Connect">PDQ</span>
     <?php endif ?>
   </div>
 

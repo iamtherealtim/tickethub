@@ -20,6 +20,19 @@ Upgrade notes for operators live in [docs/UPGRADING.md](docs/UPGRADING.md).
 
 ### Changed
 
+- **Stylesheet is now built ahead of time with Tailwind CSS v4** instead of
+  compiled in the browser by the Tailwind Play CDN (v3). Pages load one
+  ~50 KB cached CSS file instead of a ~400 KB script, render without a flash
+  of unstyled content, and work with no outside CDN except Google Fonts.
+  `cdn.tailwindcss.com` is gone from the Content-Security-Policy. The built
+  file is committed, so deployments still need no Node. Checked page by page
+  against 1.0.0 (every workspace, admin and portal page plus their dialogs,
+  light and dark): identical, except that fields without an explicit
+  background now use the theme's surface colour in dark mode instead of the
+  browser's grey, and file pickers get the flat bordered button their
+  classes always asked for.
+  Needs Safari 16.4+, Chrome 111+ or Firefox 128+.
+
 ### Fixed
 
 ### Security

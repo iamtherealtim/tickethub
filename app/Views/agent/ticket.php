@@ -123,7 +123,7 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
               <div class="flex items-center gap-2 mb-1.5">
                 <span class="text-[13px] font-semibold text-ink"><?= esc($by['name'] ?? 'Unknown') ?></span>
                 <span class="text-[11px] text-faint"><?= $isAgent ? esc($by['title'] ?? 'Agent') : 'Requester' ?></span>
-                <?php if ($note): ?><span class="inline-flex items-center gap-1 h-[18px] px-1.5 rounded bg-signal-100 text-signal text-[10px] font-bold uppercase tracking-wide"><?= th_icon('lock', 'w-3 h-3') ?>Private note</span>
+                <?php if ($note): ?><span class="inline-flex items-center gap-1 h-[18px] px-1.5 rounded-sm bg-signal-100 text-signal text-[10px] font-bold uppercase tracking-wide"><?= th_icon('lock', 'w-3 h-3') ?>Private note</span>
                 <?php elseif ($m['kind'] === 'description'): ?><span class="text-[10px] font-bold uppercase tracking-wide text-faint">Original request</span><?php endif ?>
                 <span class="ml-auto text-[11.5px] text-faint" title="<?= th_date($m['created_at']) ?>"><?= th_rel($m['created_at']) ?></span>
               </div>
@@ -167,11 +167,11 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
               data-ph-reply="Write to <?= esc(explode(' ', $requester['name'] ?? 'the requester')[0], 'attr') ?>… (Markdown, type /shortcut + Tab for a canned response)"
               data-ph-note="Visible to agents only — record what you found, tried, or ruled out."
               placeholder="Write to <?= esc(explode(' ', $requester['name'] ?? 'the requester')[0], 'attr') ?>… (Markdown, type /shortcut + Tab for a canned response)"
-              class="w-full text-[13.5px] leading-relaxed resize-y border-0 focus:ring-0 outline-none placeholder:text-faint bg-transparent"></textarea>
+              class="w-full text-[13.5px] leading-relaxed resize-y border-0 focus:ring-0 outline-hidden placeholder:text-faint bg-transparent"></textarea>
             <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-line">
               <label class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line text-[12.5px] text-muted hover:bg-canvas cursor-pointer">
                 <?= th_icon('clip', 'w-3.5 h-3.5') ?>Attach<input type="file" name="files[]" multiple class="hidden" onchange="this.parentNode.querySelector('span').textContent = this.files.length + ' file(s)'"><span></span></label>
-              <label class="inline-flex items-center gap-1.5 text-[12.5px] text-muted ml-1"><input type="checkbox" name="resolve_on_send" value="1" class="w-[15px] h-[15px] rounded border-line"> Resolve on send</label>
+              <label class="inline-flex items-center gap-1.5 text-[12.5px] text-muted ml-1"><input type="checkbox" name="resolve_on_send" value="1" class="w-[15px] h-[15px] rounded-sm border-line"> Resolve on send</label>
               <div class="flex-1"></div>
               <span class="text-[11.5px] text-faint hidden sm:block">Ctrl ↵ to send</span>
               <button type="submit" id="composerSend" class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-white text-[12.5px] font-semibold bg-brand hover:bg-brand-600">
@@ -264,7 +264,7 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
             $owner = $task['owner_id'] ? ($users[(int) $task['owner_id']] ?? null) : null;
             $tasksHtml .= '<div class="flex items-start gap-2.5 group">'
                 . '<form method="post" action="' . $base . '/tasks/' . $task['id'] . '/toggle" class="flex items-start gap-2.5 min-w-0 flex-1">' . csrf_field()
-                . '<input type="checkbox" data-autosubmit ' . ($task['done'] ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line mt-0.5 cursor-pointer">'
+                . '<input type="checkbox" data-autosubmit ' . ($task['done'] ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line mt-0.5 cursor-pointer">'
                 . '<span class="text-[12.5px] leading-snug ' . ($task['done'] ? 'line-through text-faint' : 'text-ink-500') . '">' . esc($task['title']) . '</span>'
                 . '</form>'
                 . ($owner ? th_avatar($owner, 20, 'shrink-0') : '')
@@ -356,7 +356,7 @@ $propForm = static function (string $field, string $value, array $opts) use ($ba
         $tagsHtml = '';
         foreach ($tags as $tag) {
             // Pill with an inline remove: posts the tag back to the remove endpoint.
-            $tagsHtml .= '<form method="post" action="' . $base . '/tags/remove" class="inline-flex items-center h-[20px] rounded bg-[#EFF1F5] text-[11px] text-muted font-mono pl-1.5">' . csrf_field()
+            $tagsHtml .= '<form method="post" action="' . $base . '/tags/remove" class="inline-flex items-center h-[20px] rounded-sm bg-[#EFF1F5] text-[11px] text-muted font-mono pl-1.5">' . csrf_field()
                 . '<input type="hidden" name="tag" value="' . esc($tag, 'attr') . '">' . esc($tag)
                 . '<button type="submit" class="w-5 h-full grid place-items-center rounded-r text-faint hover:text-alert hover:bg-alert-50" title="Remove tag ' . esc($tag, 'attr') . '">' . th_icon('x', 'w-2.5 h-2.5') . '</button></form>';
         }

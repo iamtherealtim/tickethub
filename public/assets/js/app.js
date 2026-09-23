@@ -41,7 +41,7 @@
 
   function openModalShell(title, sub, width, bodyNode, footerHTML) {
     modalRoot.innerHTML =
-      '<div class="fixed inset-0 z-[80] flex items-start justify-center p-4 sm:p-8 overflow-y-auto">' +
+      '<div class="fixed inset-0 z-80 flex items-start justify-center p-4 sm:p-8 overflow-y-auto">' +
       '<div data-modal-backdrop class="fixed inset-0 bg-ink/40 backdrop-blur-[2px]"></div>' +
       '<div role="dialog" aria-modal="true" class="relative w-full ' + (width || 'max-w-lg') + ' bg-white rounded-2xl shadow-pop pop-in my-auto">' +
       '<div class="flex items-start gap-3 px-5 py-4 border-b border-line">' +

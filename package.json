@@ -1,0 +1,13 @@
+{
+  "name": "tickethub-assets",
+  "private": true,
+  "description": "Build-time only: compiles public/assets/css/tailwind.css. The built file is committed, so running TicketHub never needs Node.",
+  "scripts": {
+    "build:css": "tailwindcss -i resources/css/app.css -o public/assets/css/tailwind.css --minify",
+    "watch:css": "tailwindcss -i resources/css/app.css -o public/assets/css/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "tailwindcss": "4.3.3"
+  }
+}

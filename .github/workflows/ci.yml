@@ -37,6 +37,27 @@ jobs:
           done < <(find app tests -name '*.php' -print0)
           exit $status
 
+  css:
+    name: Built CSS is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      # public/assets/css/tailwind.css is committed so running TicketHub never
+      # needs Node. Rebuild it and fail if a class was added without `npm run build:css`.
+      - name: Rebuild and compare
+        run: |
+          npm run build:css
+          git diff --exit-code --stat -- public/assets/css/tailwind.css \
+            || { echo "::error::public/assets/css/tailwind.css is stale. Run 'npm run build:css' and commit the result."; exit 1; }
+
   tests:
     name: PHPUnit (MariaDB 11)
     runs-on: ubuntu-latest

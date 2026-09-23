@@ -7,13 +7,13 @@ foreach ($groups as $g) {
 $scopeChip = static function (array $c) use ($groupsById, $cannedOwners): string {
     $scope = $c['scope'] ?? 'global';
     if ($scope === 'group') {
-        return '<span class="inline-flex h-[20px] px-1.5 rounded border text-[11px] font-semibold bg-violet-50 text-violet border-violet/20">' . esc($groupsById[(int) $c['group_id']] ?? 'Group') . '</span>';
+        return '<span class="inline-flex h-[20px] px-1.5 rounded-sm border text-[11px] font-semibold bg-violet-50 text-violet border-violet/20">' . esc($groupsById[(int) $c['group_id']] ?? 'Group') . '</span>';
     }
     if ($scope === 'personal') {
-        return '<span class="inline-flex h-[20px] px-1.5 rounded border text-[11px] font-semibold bg-canvas text-muted border-line">' . esc($cannedOwners[(int) $c['owner_id']] ?? 'Personal') . '</span>';
+        return '<span class="inline-flex h-[20px] px-1.5 rounded-sm border text-[11px] font-semibold bg-canvas text-muted border-line">' . esc($cannedOwners[(int) $c['owner_id']] ?? 'Personal') . '</span>';
     }
 
-    return '<span class="inline-flex h-[20px] px-1.5 rounded border text-[11px] font-semibold bg-brand-50 text-brand border-brand-100">Global</span>';
+    return '<span class="inline-flex h-[20px] px-1.5 rounded-sm border text-[11px] font-semibold bg-brand-50 text-brand border-brand-100">Global</span>';
 };
 $inputCls = 'w-full h-9 px-2.5 rounded-lg border border-line bg-white text-[13px] placeholder:text-faint focus:border-brand';
 $formFields = static function (array $c = []) use ($groups, $inputCls): string {

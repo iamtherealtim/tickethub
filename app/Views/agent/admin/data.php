@@ -16,14 +16,14 @@ $field = static function (string $name, string $label, int $value, string $help)
       . '<div class="p-4 grid sm:grid-cols-2 gap-3.5">'
       . $field('retention_closed_days', 'Closed tickets — purge after (days)', $s['closed_days'], 'Closed tickets not touched for this long are deleted with their messages, tasks, time, links, watchers, approvals, custom values, notifications and automation history.')
       . '<label class="flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer self-end">'
-      . '<input type="checkbox" name="retention_purge_attachments" value="1" ' . ($s['purge_attachments'] ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line">'
+      . '<input type="checkbox" name="retention_purge_attachments" value="1" ' . ($s['purge_attachments'] ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line">'
       . '<span class="text-[13px] font-medium text-ink">Also delete their attachment files</span></label>'
       . $field('retention_audit_days', 'Audit log — purge after (days)', $s['audit_days'], 'Sign-ins, admin changes and rule runs older than this.')
       . $field('retention_webhook_delivery_days', 'Webhook deliveries — purge after (days)', $s['webhook_days'], 'Delivery log rows (payloads and responses).')
       . $field('retention_notification_days', 'Read notifications — purge after (days)', $s['notification_days'], 'Only notifications that have been read; unread ones stay.')
       . '</div>'
       . '<div class="flex items-center gap-2 px-4 py-3.5 border-t border-line bg-canvas rounded-b-xl">'
-      . '<span class="text-[12px] text-muted">Applied by <code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5">php spark tickethub:retention</code> (add <code class="font-mono">--dry-run</code> to preview). Schedule it daily. Orphaned upload files older than 7 days are always swept.</span>'
+      . '<span class="text-[12px] text-muted">Applied by <code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5">php spark tickethub:retention</code> (add <code class="font-mono">--dry-run</code> to preview). Schedule it daily. Orphaned upload files older than 7 days are always swept.</span>'
       . '<div class="flex-1"></div>'
       . '<button type="submit" class="h-9 px-3.5 rounded-lg bg-brand hover:bg-brand-600 text-white text-[13px] font-semibold">Save</button>'
       . '</div>'

@@ -12,13 +12,13 @@ foreach ($results as $r) {
         : ($r['score'] >= 35 ? ['Likely', 'bg-signal-50 text-signal border-signal-100']
         : ['Possible', 'bg-canvas text-muted border-line']);
 
-    $rows .= '<label class="flex items-start gap-3 p-3 rounded-lg border border-line hover:border-[#CBD1DC] hover:bg-canvas cursor-pointer transition has-[:checked]:border-brand has-[:checked]:bg-brand-50">'
+    $rows .= '<label class="flex items-start gap-3 p-3 rounded-lg border border-line hover:border-[#CBD1DC] hover:bg-canvas cursor-pointer transition has-checked:border-brand has-checked:bg-brand-50">'
         . '<input type="radio" name="target" value="' . esc($t['code'], 'attr') . '" class="mt-1 w-[15px] h-[15px] shrink-0" required>'
         . '<span class="min-w-0 flex-1">'
         . '<span class="flex flex-wrap items-center gap-2">'
         . '<span class="font-mono text-[11px] text-faint">' . esc($t['code']) . '</span>'
         . th_status_chip($t['status'])
-        . '<span class="inline-flex items-center h-[18px] px-1.5 rounded border text-[10px] font-bold uppercase tracking-wide ' . $strength[1] . '">' . $strength[0] . '</span>'
+        . '<span class="inline-flex items-center h-[18px] px-1.5 rounded-sm border text-[10px] font-bold uppercase tracking-wide ' . $strength[1] . '">' . $strength[0] . '</span>'
         . '</span>'
         . '<span class="block text-[13.5px] font-medium text-ink mt-1 truncate">' . esc($t['subject']) . '</span>'
         . '<span class="block text-[11.5px] text-faint mt-1">'

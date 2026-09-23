@@ -7,7 +7,7 @@ $ldapOn = ($settings['ldap_enabled'] ?? '0') === '1';
 $samlOn = ($settings['saml_enabled'] ?? '0') === '1';
 $lbl = 'block text-[12px] font-medium text-ink-500 mb-1.5';
 $hint = 'text-[11.5px] text-faint mt-1';
-$check = 'w-[15px] h-[15px] rounded border-line';
+$check = 'w-[15px] h-[15px] rounded-sm border-line';
 $footer = 'flex items-center gap-2 px-4 py-3.5 border-t border-line bg-canvas rounded-b-xl';
 $primary = 'h-9 px-3.5 rounded-lg bg-brand hover:bg-brand-600 text-white text-[13px] font-semibold';
 $ghost = 'h-9 px-3.5 rounded-lg border border-line bg-white text-[13px] font-medium text-ink-500 hover:bg-canvas';
@@ -142,7 +142,7 @@ $anySsoOn = ($settings['azure_enabled'] ?? '0') === '1' || $oidcOn || $ldapOn ||
           <div><label class="<?= $lbl ?>">Administrator claim</label><input name="oidc_admin_claim" value="<?= $s('oidc_admin_claim') ?>" placeholder="groups" class="<?= $inputCls ?> font-mono text-[12px]"></div>
           <div><label class="<?= $lbl ?>">contains value</label><input name="oidc_admin_value" value="<?= $s('oidc_admin_value') ?>" placeholder="it-admins" class="<?= $inputCls ?> font-mono text-[12px]"></div>
         </div>
-        <p class="sm:col-span-2 <?= $hint ?> !mt-0">A claim can be a list (<code class="font-mono">groups</code>) or a single value (<code class="font-mono">hd</code> = <code class="font-mono">example.com</code> for Google). With either mapping set, everyone else becomes a Requester on their next sign-in; Supervisors and the last Administrator are never demoted. Leave both blank to keep roles as set under Agents &amp; roles.</p>
+        <p class="sm:col-span-2 <?= $hint ?> mt-0!">A claim can be a list (<code class="font-mono">groups</code>) or a single value (<code class="font-mono">hd</code> = <code class="font-mono">example.com</code> for Google). With either mapping set, everyone else becomes a Requester on their next sign-in; Supervisors and the last Administrator are never demoted. Leave both blank to keep roles as set under Agents &amp; roles.</p>
 
         <div class="sm:col-span-2">
           <label class="<?= $lbl ?>">Allowed email domains</label>
@@ -159,7 +159,7 @@ $anySsoOn = ($settings['azure_enabled'] ?? '0') === '1' || $oidcOn || $ldapOn ||
           <div class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint mb-1.5">Provider setup</div>
           <ol class="text-[12.5px] text-ink-500 leading-relaxed list-decimal ml-4 space-y-1">
             <li>Create a <b>Web</b> OAuth client with the provider (Google: Cloud Console → APIs &amp; Services → Credentials).</li>
-            <li>Add this redirect URI: <code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5 select-all"><?= esc($oidcCallback) ?></code></li>
+            <li>Add this redirect URI: <code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5 select-all"><?= esc($oidcCallback) ?></code></li>
             <li>Paste the client ID and secret above. New people are created as Requesters on first sign-in (email match signs existing accounts in).</li>
           </ol>
         </div>
@@ -244,7 +244,7 @@ $anySsoOn = ($settings['azure_enabled'] ?? '0') === '1' || $oidcOn || $ldapOn ||
           <div><label class="<?= $lbl ?>">Administrator attribute</label><input name="saml_admin_attr" value="<?= $s('saml_admin_attr') ?>" placeholder="groups" class="<?= $inputCls ?> font-mono text-[12px]"></div>
           <div><label class="<?= $lbl ?>">contains value</label><input name="saml_admin_value" value="<?= $s('saml_admin_value') ?>" placeholder="it-admins" class="<?= $inputCls ?> font-mono text-[12px]"></div>
         </div>
-        <p class="sm:col-span-2 <?= $hint ?> !mt-0">With either mapping set, everyone else becomes a Requester on their next sign-in; Supervisors and the last Administrator are never demoted. Leave both blank to keep roles as set under Agents &amp; roles.</p>
+        <p class="sm:col-span-2 <?= $hint ?> mt-0!">With either mapping set, everyone else becomes a Requester on their next sign-in; Supervisors and the last Administrator are never demoted. Leave both blank to keep roles as set under Agents &amp; roles.</p>
 
         <div class="sm:col-span-2">
           <label class="<?= $lbl ?>">Allowed email domains (optional)</label>
@@ -261,12 +261,12 @@ $anySsoOn = ($settings['azure_enabled'] ?? '0') === '1' || $oidcOn || $ldapOn ||
           <div class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint mb-1.5">Provider setup</div>
           <ol class="text-[12.5px] text-ink-500 leading-relaxed list-decimal ml-4 space-y-1">
             <li>Create a SAML application at the provider and give it our metadata, either as a URL or by downloading it:
-              <div class="mt-1"><code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5 select-all"><?= esc($samlMetadataUrl) ?></code></div>
+              <div class="mt-1"><code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5 select-all"><?= esc($samlMetadataUrl) ?></code></div>
             </li>
             <li>Or configure it by hand — ACS URL (Reply URL) and Entity ID:
               <div class="mt-1 space-y-1">
-                <div><code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5 select-all"><?= esc($samlAcsUrl) ?></code></div>
-                <div><code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5 select-all"><?= esc($samlEntityId) ?></code></div>
+                <div><code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5 select-all"><?= esc($samlAcsUrl) ?></code></div>
+                <div><code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5 select-all"><?= esc($samlEntityId) ?></code></div>
               </div>
             </li>
             <li>Send the email address in the NameID (format: emailAddress), or map an attribute above. New people are created as Requesters on first sign-in (email match signs existing accounts in).</li>
@@ -341,7 +341,7 @@ $anySsoOn = ($settings['azure_enabled'] ?? '0') === '1' || $oidcOn || $ldapOn ||
           <label class="<?= $lbl ?>">Administrator group DN</label>
           <input name="ldap_admin_group_dn" value="<?= $s('ldap_admin_group_dn') ?>" placeholder="CN=IT Admins,OU=Groups,DC=corp,DC=example,DC=com" class="<?= $inputCls ?> font-mono text-[12px]">
         </div>
-        <p class="sm:col-span-2 <?= $hint ?> !mt-0">Direct membership only (the <code class="font-mono">memberOf</code> attribute). With either group set, everyone else becomes a Requester on their next directory sign-in; Supervisors and the last Administrator are never demoted.</p>
+        <p class="sm:col-span-2 <?= $hint ?> mt-0!">Direct membership only (the <code class="font-mono">memberOf</code> attribute). With either group set, everyone else becomes a Requester on their next directory sign-in; Supervisors and the last Administrator are never demoted.</p>
 
         <label class="sm:col-span-2 flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">
           <input type="checkbox" name="ldap_create_users" value="1" <?= ($settings['ldap_create_users'] ?? '1') === '1' ? 'checked' : '' ?> class="<?= $check ?>">

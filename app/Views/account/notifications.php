@@ -30,10 +30,10 @@ $inApp = \App\Libraries\NotificationPrefs::IN_APP;
           <div class="text-[11.5px] text-faint"><?= $isInApp ? 'In-app notification' : 'Email template: ' . esc($trigger) ?></div>
         </div>
         <label class="w-[90px] flex justify-center <?= $isInApp ? 'opacity-40' : '' ?>" title="<?= $isInApp ? 'This event is in-app only' : 'Email' ?>">
-          <input type="checkbox" name="pref[<?= esc($trigger, 'attr') ?>][email]" value="1" <?= (int) $p['email'] ? 'checked' : '' ?> class="w-[15px] h-[15px] rounded border-line">
+          <input type="checkbox" name="pref[<?= esc($trigger, 'attr') ?>][email]" value="1" <?= (int) $p['email'] ? 'checked' : '' ?> class="w-[15px] h-[15px] rounded-sm border-line">
         </label>
         <label class="w-[90px] flex justify-center <?= $isInApp ? '' : 'opacity-40' ?>" title="<?= $isInApp ? 'In-app' : 'This event is email only' ?>">
-          <input type="checkbox" name="pref[<?= esc($trigger, 'attr') ?>][in_app]" value="1" <?= (int) $p['in_app'] ? 'checked' : '' ?> class="w-[15px] h-[15px] rounded border-line">
+          <input type="checkbox" name="pref[<?= esc($trigger, 'attr') ?>][in_app]" value="1" <?= (int) $p['in_app'] ? 'checked' : '' ?> class="w-[15px] h-[15px] rounded-sm border-line">
         </label>
       </div>
       <?php endforeach ?>
@@ -45,7 +45,7 @@ $inApp = \App\Libraries\NotificationPrefs::IN_APP;
       </div>
       <div class="p-4">
         <label class="flex items-start gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">
-          <input type="checkbox" name="digest" value="1" <?= ! empty($digest) ? 'checked' : '' ?> class="w-[15px] h-[15px] rounded border-line mt-0.5">
+          <input type="checkbox" name="digest" value="1" <?= ! empty($digest) ? 'checked' : '' ?> class="w-[15px] h-[15px] rounded-sm border-line mt-0.5">
           <span class="text-[13px]"><span class="font-medium text-ink">Daily digest instead of instant email</span>
             <span class="block text-muted mt-0.5">One summary email a day listing everything new in your bell, instead of an email per event. In-app notifications are unaffected.</span></span>
         </label>

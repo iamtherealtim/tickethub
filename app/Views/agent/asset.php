@@ -12,10 +12,10 @@
   <div class="bg-white border border-line rounded-xl shadow-card p-5 mb-4">
     <div class="flex flex-wrap items-center gap-2">
       <span class="font-mono text-[11.5px] text-faint"><?= esc($a['tag']) ?></span>
-      <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold <?= $statusCls ?>"><?= esc($a['status']) ?></span>
+      <span class="inline-flex items-center h-[20px] px-2 rounded-sm border text-[11px] font-semibold <?= $statusCls ?>"><?= esc($a['status']) ?></span>
       <span class="text-[12px] text-muted"><?= esc($a['type']) ?></span>
       <?php if (! empty($a['pdq_device_id'])): ?>
-        <span class="inline-flex items-center h-[18px] px-1.5 rounded bg-violet-50 text-violet text-[9.5px] font-bold uppercase tracking-wide" title="Synced from PDQ Connect">PDQ</span>
+        <span class="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-violet-50 text-violet text-[9.5px] font-bold uppercase tracking-wide" title="Synced from PDQ Connect">PDQ</span>
       <?php endif ?>
       <span class="ml-auto flex items-center gap-2">
         <?= th_btn('Edit', 'data-fetch-modal="' . site_url('app/assets/' . $a['id'] . '/edit') . '"', 'ghost', 'edit') ?>

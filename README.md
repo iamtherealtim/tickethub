@@ -10,8 +10,8 @@ the enterprise price tag: tickets with real SLAs and business hours, problems,
 changes and assets, a self-service portal with a knowledge base and service
 catalog, automations, email in and out, single sign-on, two-factor
 authentication, webhooks and a JSON API — in **one CodeIgniter 4 application
-on MySQL/MariaDB**. No JavaScript build step, no queue workers, no Composer at
-runtime. Clone it, point a web server at `public/`, run two `spark` commands.
+on MySQL/MariaDB**. No build step to deploy (the stylesheet ships prebuilt),
+no queue workers, no Composer at runtime. Clone it, point a web server at `public/`, run two `spark` commands.
 
 ## Screenshots
 
@@ -94,6 +94,8 @@ the document root at `public/`; cron. The framework itself lives in `system/`
 and needs no Composer step, but SAML sign-in is a real package — run
 `composer install --no-dev` once to enable it (the Docker image already
 does). Everything else works without ever running Composer.
+
+Supported browsers: current Chrome, Edge and Firefox (128+), and Safari 16.4+.
 
 ```bash
 git clone https://github.com/iamtherealtim/tickethub.git tickethub && cd tickethub

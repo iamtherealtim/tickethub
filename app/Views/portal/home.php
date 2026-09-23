@@ -10,7 +10,7 @@
       <div class="relative mt-6 max-w-[560px]">
         <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#7C8698]"><?= th_icon('search', 'w-[18px] h-[18px]') ?></span>
         <input id="portalSearch" data-search-url="<?= site_url('portal/search') ?>" placeholder="<?= esc(lang('Portal.home.searchPlaceholder'), 'attr') ?>" autocomplete="off"
-          class="w-full h-12 pl-11 pr-4 rounded-xl bg-white/[.08] border border-white/15 text-[14px] text-white placeholder:text-[#7C8698] focus:bg-white focus:text-ink focus:border-white outline-none transition">
+          class="w-full h-12 pl-11 pr-4 rounded-xl bg-white/8 border border-white/15 text-[14px] text-white placeholder:text-[#7C8698] focus:bg-white focus:text-ink focus:border-white outline-hidden transition">
         <div id="portalResults" class="absolute left-0 right-0 top-14 bg-white rounded-xl shadow-pop border border-line overflow-hidden hidden z-20"></div>
       </div>
       <p class="text-[13px] text-[#7C8698] mt-3"><?= lang('Portal.home.searchHint') ?></p>

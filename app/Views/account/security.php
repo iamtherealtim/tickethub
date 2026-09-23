@@ -101,7 +101,7 @@ $wrap = $layout === 'layouts/agent' ? 'p-5 max-w-[860px] mx-auto fade-in' : 'max
       <div class="space-y-4">
         <ol class="text-[13px] text-ink-500 leading-relaxed list-decimal ml-4 space-y-1">
           <li>Scan the QR code with your authenticator app, or enter this key by hand:
-            <code class="block mt-1 font-mono text-[12.5px] bg-canvas border border-line rounded px-2 py-1.5 select-all tracking-[.1em]"><?= esc(trim(chunk_split($pendingSecret, 4, ' '))) ?></code></li>
+            <code class="block mt-1 font-mono text-[12.5px] bg-canvas border border-line rounded-sm px-2 py-1.5 select-all tracking-[.1em]"><?= esc(trim(chunk_split($pendingSecret, 4, ' '))) ?></code></li>
           <li>Type the 6-digit code the app shows to confirm.</li>
         </ol>
         <form method="post" action="<?= site_url('account/security/enable') ?>" class="flex items-end gap-2">

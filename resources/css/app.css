@@ -1,0 +1,249 @@
+/*
+ * Source for public/assets/css/tailwind.css, built with Tailwind CSS v4.
+ * Rebuild with `npm run build:css` after adding or changing classes in
+ * views, helpers or JS; CI fails if the committed build is stale.
+ *
+ * Cascade, lowest to highest:
+ *   theme → base (preflight) → th (our element and helper rules)
+ *   → components → utilities → unlayered (rules that must beat utilities)
+ */
+@layer theme, base, th, components, utilities;
+
+@import 'tailwindcss' source(none);
+
+@source '../../app/Views';
+@source '../../app/Helpers';
+@source '../../app/Controllers';
+@source '../../app/Libraries';
+@source '../../app/Config';
+@source '../../app/Language';
+@source '../../public/assets/js';
+
+/* space-* and divide-* are defined below with their v3 selectors, which the
+   layouts were built against. Keep the v4 versions out of the build. */
+@source not inline('space-y-{0.5,1,1.5,2,2.5,3,3.5,4,8}');
+@source not inline('space-x-1.5');
+@source not inline('divide-{y,line}');
+
+/* Colours resolve through the --th-* triplets at the element, so dark mode
+   and the .sidebar / .th-inverse overrides need no `dark:` variants. */
+@theme inline {
+  --color-white: rgb(var(--th-surface));
+
+  --color-ink: rgb(var(--th-ink));
+  --color-ink-700: rgb(var(--th-ink-700));
+  --color-ink-600: rgb(var(--th-ink-600));
+  --color-ink-500: rgb(var(--th-ink-500));
+
+  --color-muted: rgb(var(--th-muted));
+  --color-faint: rgb(var(--th-faint));
+  --color-line: rgb(var(--th-line));
+  --color-canvas: rgb(var(--th-canvas));
+
+  --color-brand: rgb(var(--th-brand));
+  --color-brand-600: rgb(var(--th-brand-600));
+  --color-brand-100: rgb(var(--th-brand-100));
+  --color-brand-50: rgb(var(--th-brand-50));
+
+  --color-signal: rgb(var(--th-signal));
+  --color-signal-400: rgb(var(--th-signal-400));
+  --color-signal-100: rgb(var(--th-signal-100));
+  --color-signal-50: rgb(var(--th-signal-50));
+
+  --color-alert: rgb(var(--th-alert));
+  --color-alert-400: rgb(var(--th-alert-400));
+  --color-alert-100: rgb(var(--th-alert-100));
+  --color-alert-50: rgb(var(--th-alert-50));
+
+  --color-violet: rgb(var(--th-violet));
+  --color-violet-50: rgb(var(--th-violet-50));
+
+  --font-display: Archivo, system-ui, sans-serif;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --shadow-card: var(--th-shadow-card);
+  --shadow-pop: var(--th-shadow-pop);
+
+  --radius-xl: 10px;
+  --radius-2xl: 14px;
+}
+
+/* ---------- design tokens ----------
+   RGB triplets, so utilities can apply opacity (`bg-white/60`). Light values
+   are the original palette; the dark blocks flip them. */
+:root {
+  color-scheme: light;
+  --th-surface: 255 255 255;
+  --th-canvas: 241 243 247;
+  --th-ink: 16 20 28; --th-ink-700: 26 33 48; --th-ink-600: 35 43 60; --th-ink-500: 51 60 80;
+  --th-muted: 91 101 119; --th-faint: 139 147 163; --th-line: 227 230 236;
+  --th-brand: 14 124 107; --th-brand-600: 11 101 88; --th-brand-100: 207 231 225; --th-brand-50: 231 243 240;
+  --th-signal: 184 118 11; --th-signal-400: 233 162 59; --th-signal-100: 247 228 196; --th-signal-50: 252 244 230;
+  --th-alert: 188 51 45; --th-alert-400: 220 91 84; --th-alert-100: 245 212 210; --th-alert-50: 251 235 234;
+  --th-violet: 90 79 176; --th-violet-50: 238 236 248;
+  --th-shadow-card: 0 1px 2px rgba(16,20,28,.05), 0 1px 3px rgba(16,20,28,.05);
+  --th-shadow-pop: 0 16px 40px -12px rgba(16,20,28,.28), 0 2px 8px rgba(16,20,28,.08);
+  --th-scroll: #C9CED8; --th-scroll-hover: #A9B0BE;
+  --th-row-hover: #F7F8FB; --th-burn: #E9ECF1; --th-code: #EEF0F4; --th-prose: #333C50;
+  --th-hex-hover-border: #CBD1DC; --th-hex-chip: #EFF1F5; --th-hex-violet-border: #DCD8F0;
+  --th-hex-medium-text: #3B5BDB; --th-hex-medium-bg: #EDF2FF; --th-hex-ink-avatar: #E8EAEF;
+  --th-hex-ink-avatar-border: #D8DCE4; --th-hex-toggle-off: #D3D8E0; --th-scrim: rgba(16,20,28,.4);
+  --th-select-arrow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235B6577' stroke-width='2'><path d='m6 9 6 6 6-6'/></svg>");
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --th-surface: 23 28 38;
+  --th-canvas: 15 19 26;
+  --th-ink: 230 234 242; --th-ink-700: 213 218 228; --th-ink-600: 195 201 214; --th-ink-500: 180 187 201;
+  --th-muted: 160 168 182; --th-faint: 124 134 152; --th-line: 42 50 65;
+  --th-brand: 58 165 143; --th-brand-600: 46 143 124; --th-brand-100: 31 74 67; --th-brand-50: 20 46 42;
+  --th-signal: 217 146 42; --th-signal-400: 233 162 59; --th-signal-100: 79 58 20; --th-signal-50: 44 35 20;
+  --th-alert: 224 96 90; --th-alert-400: 220 91 84; --th-alert-100: 90 37 35; --th-alert-50: 51 25 26;
+  --th-violet: 155 147 222; --th-violet-50: 38 35 70;
+  --th-shadow-card: 0 1px 2px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3);
+  --th-shadow-pop: 0 16px 40px -12px rgba(0,0,0,.7), 0 2px 8px rgba(0,0,0,.4);
+  --th-scroll: #3A4356; --th-scroll-hover: #4B5569;
+  --th-row-hover: #1D2330; --th-burn: #2A3241; --th-code: #232B3C; --th-prose: #C3C9D6;
+  --th-hex-hover-border: #3A4356; --th-hex-chip: #232B3C; --th-hex-violet-border: #3B3766;
+  --th-hex-medium-text: #7E9BFF; --th-hex-medium-bg: #1E2A4A; --th-hex-ink-avatar: #2A3241;
+  --th-hex-ink-avatar-border: #3A4356; --th-hex-toggle-off: #3A4356; --th-scrim: rgba(0,0,0,.6);
+  --th-select-arrow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23A0A8B6' stroke-width='2'><path d='m6 9 6 6 6-6'/></svg>");
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --th-surface: 23 28 38;
+    --th-canvas: 15 19 26;
+    --th-ink: 230 234 242; --th-ink-700: 213 218 228; --th-ink-600: 195 201 214; --th-ink-500: 180 187 201;
+    --th-muted: 160 168 182; --th-faint: 124 134 152; --th-line: 42 50 65;
+    --th-brand: 58 165 143; --th-brand-600: 46 143 124; --th-brand-100: 31 74 67; --th-brand-50: 20 46 42;
+    --th-signal: 217 146 42; --th-signal-400: 233 162 59; --th-signal-100: 79 58 20; --th-signal-50: 44 35 20;
+    --th-alert: 224 96 90; --th-alert-400: 220 91 84; --th-alert-100: 90 37 35; --th-alert-50: 51 25 26;
+    --th-violet: 155 147 222; --th-violet-50: 38 35 70;
+    --th-shadow-card: 0 1px 2px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3);
+    --th-shadow-pop: 0 16px 40px -12px rgba(0,0,0,.7), 0 2px 8px rgba(0,0,0,.4);
+    --th-scroll: #3A4356; --th-scroll-hover: #4B5569;
+    --th-row-hover: #1D2330; --th-burn: #2A3241; --th-code: #232B3C; --th-prose: #C3C9D6;
+    --th-hex-hover-border: #3A4356; --th-hex-chip: #232B3C; --th-hex-violet-border: #3B3766;
+    --th-hex-medium-text: #7E9BFF; --th-hex-medium-bg: #1E2A4A; --th-hex-ink-avatar: #2A3241;
+    --th-hex-ink-avatar-border: #3A4356; --th-hex-toggle-off: #3A4356; --th-scrim: rgba(0,0,0,.6);
+    --th-select-arrow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23A0A8B6' stroke-width='2'><path d='m6 9 6 6 6-6'/></svg>");
+  }
+}
+/* Surfaces that are dark on purpose in both themes (sidebar, portal hero,
+   login panel) re-declare the tokens so `bg-ink text-white` stays dark. */
+.th-inverse, .sidebar {
+  --th-surface: 255 255 255; --th-ink: 16 20 28; --th-ink-700: 26 33 48; --th-ink-600: 35 43 60; --th-ink-500: 51 60 80;
+  --th-muted: 91 101 119; --th-faint: 139 147 163; --th-line: 227 230 236; --th-brand-100: 207 231 225;
+}
+:root[data-theme="dark"] :is(.th-inverse, .sidebar) { --th-ink: 11 14 20; --th-ink-700: 23 28 38; --th-line: 42 50 65; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) :is(.th-inverse, .sidebar) { --th-ink: 11 14 20; --th-ink-700: 23 28 38; --th-line: 42 50 65; }
+}
+
+/* v3 defaults the views were written against. */
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button { border-color: #e5e7eb; }
+  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+}
+
+/* Element and helper rules: above preflight, below utilities, so a class on
+   the element still wins. */
+@layer th {
+  html, body { height: 100%; }
+  body { background: rgb(var(--th-canvas)); color: rgb(var(--th-ink)); font-family: "IBM Plex Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, .font-display { font-family: Archivo, system-ui, sans-serif; letter-spacing: -.015em; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--th-scroll); border: 3px solid transparent; background-clip: content-box; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--th-scroll-hover); background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  .sidebar ::-webkit-scrollbar-thumb { background: #333C50; background-clip: content-box; }
+  :focus-visible { outline: 2px solid rgb(var(--th-brand)); outline-offset: 2px; border-radius: 4px; }
+  .burn { height: 2px; background: var(--th-burn); overflow: hidden; }
+  .burn > i { display: block; height: 100%; transition: width .4s ease; }
+  .led { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .tick { font-variant-numeric: tabular-nums; }
+  .fade-in { animation: fade .22s ease both; }
+  .pop-in { animation: pop .16s cubic-bezier(.2,.8,.3,1) both; }
+  .shake-no { animation: shakeNo .32s ease; }
+  .stripe { background-image: repeating-linear-gradient(135deg, rgb(var(--th-alert) / .10) 0 6px, transparent 6px 12px); }
+  input[type=checkbox] { accent-color: rgb(var(--th-brand)); }
+  input, select, textarea { color: rgb(var(--th-ink)); }
+  /* v4 preflight makes fields transparent; v3 left the browser's opaque field
+     colour, which is also what keeps sub-pixel text rendering inside them. */
+  input:not([type=checkbox], [type=radio], [type=file], [type=range], [type=color]), select, textarea { background-color: rgb(var(--th-surface)); }
+  input::placeholder, textarea::placeholder { color: #9ca3af; }
+  select option { background: rgb(var(--th-surface)); color: rgb(var(--th-ink)); }
+  select { background-image: var(--th-select-arrow); background-repeat: no-repeat; background-position: right 8px center; appearance: none; padding-right: 28px !important; }
+  .prose-kb h2 { font-size: 1.05rem; font-weight: 600; margin: 1.4rem 0 .5rem; }
+  .prose-kb p { margin: .6rem 0; line-height: 1.7; color: var(--th-prose); }
+  .prose-kb ul { margin: .6rem 0 .6rem 1.1rem; list-style: disc; line-height: 1.8; color: var(--th-prose); }
+  .prose-kb code { font-family: "IBM Plex Mono", monospace; font-size: .85em; background: var(--th-code); padding: 1px 5px; border-radius: 4px; }
+  :root[data-theme="dark"] input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.8); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.8); }
+  }
+}
+
+@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes shakeNo { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+
+/* Tailwind v3 space-* / divide-*: margin-top on every visible child after the
+   first, ignoring [hidden] siblings (v4 uses margin-bottom instead). */
+@layer utilities {
+  .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: .125rem; margin-bottom: 0; }
+  .space-y-1 > :not([hidden]) ~ :not([hidden]) { margin-top: .25rem; margin-bottom: 0; }
+  .space-y-1\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: .375rem; margin-bottom: 0; }
+  .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: .5rem; margin-bottom: 0; }
+  .space-y-2\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: .625rem; margin-bottom: 0; }
+  .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: .75rem; margin-bottom: 0; }
+  .space-y-3\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: .875rem; margin-bottom: 0; }
+  .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; margin-bottom: 0; }
+  .space-y-8 > :not([hidden]) ~ :not([hidden]) { margin-top: 2rem; margin-bottom: 0; }
+  .space-x-1\.5 > :not([hidden]) ~ :not([hidden]) { margin-left: .375rem; margin-right: 0; }
+  .divide-y > :not([hidden]) ~ :not([hidden]) { border-top-width: 1px; border-bottom-width: 0; }
+  .divide-line > :not([hidden]) ~ :not([hidden]) { border-color: rgb(var(--th-line)); }
+}
+
+/* ---------- unlayered: these beat utilities, as their higher specificity did under v3 ---------- */
+
+/* One clean focus treatment on form controls (border + soft halo) instead of
+   the keyboard outline stacked on their own focus border. */
+input:focus-visible, select:focus-visible, textarea:focus-visible, [contenteditable]:focus-visible { outline: none; outline-offset: 0; border-color: rgb(var(--th-brand)); box-shadow: 0 0 0 3px rgb(var(--th-brand) / .14); }
+input[type=checkbox]:focus-visible, input[type=radio]:focus-visible { box-shadow: 0 0 0 3px rgb(var(--th-brand) / .25); }
+.row-hover:hover { background: var(--th-row-hover); }
+
+/* Arbitrary hex utilities used across views and helpers, tokenised so dark
+   mode can restyle them without touching every call site. */
+.hover\:border-\[\#CBD1DC\]:hover { border-color: var(--th-hex-hover-border); }
+.bg-\[\#EFF1F5\] { background-color: var(--th-hex-chip); }
+.border-\[\#DCD8F0\] { border-color: var(--th-hex-violet-border); }
+.text-\[\#3B5BDB\] { color: var(--th-hex-medium-text); }
+.bg-\[\#EDF2FF\] { background-color: var(--th-hex-medium-bg); }
+.bg-\[\#E8EAEF\] { background-color: var(--th-hex-ink-avatar); }
+.border-\[\#D8DCE4\] { border-color: var(--th-hex-ink-avatar-border); }
+.bg-\[\#D3D8E0\] { background-color: var(--th-hex-toggle-off); }
+.bg-ink\/40 { background-color: var(--th-scrim); }
+
+.th-dark-only { display: none; }
+:root[data-theme="dark"] .th-dark-only { display: inline; }
+:root[data-theme="dark"] .th-light-only { display: none; }
+:root[data-theme="dark"] .sidebar { border-right: 1px solid rgb(var(--th-line)); }
+:root[data-theme="dark"] .sidebar ::-webkit-scrollbar-thumb { background: #2A3241; background-clip: content-box; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .th-dark-only { display: inline; }
+  :root:not([data-theme="light"]) .th-light-only { display: none; }
+  :root:not([data-theme="light"]) .sidebar { border-right: 1px solid rgb(var(--th-line)); }
+  :root:not([data-theme="light"]) .sidebar ::-webkit-scrollbar-thumb { background: #2A3241; background-clip: content-box; }
+}
+
+/* Theme switcher: only the icon for the current mode is shown. */
+[data-theme-toggle] [data-theme-icon] { display: none; }
+[data-theme-toggle][data-theme-state="system"] [data-theme-icon="system"],
+[data-theme-toggle][data-theme-state="light"] [data-theme-icon="light"],
+[data-theme-toggle][data-theme-state="dark"] [data-theme-icon="dark"] { display: inline-flex; }
+[data-theme-set][aria-pressed="true"] { background: rgb(var(--th-brand-50)); border-color: rgb(var(--th-brand)); color: rgb(var(--th-brand)); }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
