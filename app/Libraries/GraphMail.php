@@ -122,10 +122,17 @@ class GraphMail
         }
     }
 
-    /** Pull the headers we thread and loop-guard on out of Graph's header list. */
+    /**
+     * Pull the headers we thread, loop-guard and verify senders on out of
+     * Graph's header list. The FIRST occurrence of each wins on purpose: mail
+     * headers are prepended, so the top Authentication-Results is the one our
+     * own Exchange Online added — any copy further down came with the message
+     * and could have been forged by the sender.
+     */
     private static function headerMap(array $msg): array
     {
-        $want = ['auto-submitted', 'x-auto-response-suppress', 'precedence', 'in-reply-to', 'references', 'x-autoreply', 'x-autorespond'];
+        $want = ['auto-submitted', 'x-auto-response-suppress', 'precedence', 'in-reply-to', 'references', 'x-autoreply', 'x-autorespond',
+            'authentication-results', 'x-ms-exchange-organization-authas'];
         $out  = [];
         foreach ((array) ($msg['internetMessageHeaders'] ?? []) as $h) {
             $name = strtolower((string) ($h['name'] ?? ''));
@@ -191,6 +198,9 @@ class GraphMail
                 'in_reply_to' => $hmap['in-reply-to'] ?? '',
                 'references'  => $hmap['references'] ?? '',
                 'headers'     => $hmap,
+                // Exchange strips X-MS-Exchange-Organization-* from mail arriving
+                // from outside, so on this path "AuthAs: Internal" is trustworthy.
+                'source'      => 'graph',
             ];
 
             $result = $intake->inboundEmail($from, $subject, $text, $fetch, $meta);

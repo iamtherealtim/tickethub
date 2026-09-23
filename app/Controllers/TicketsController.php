@@ -226,13 +226,15 @@ class TicketsController extends BaseController
         $out = fopen('php://temp', 'r+');
         fputcsv($out, ['Code', 'Subject', 'Requester', 'Assignee', 'Status', 'Priority', 'Type', 'Category', 'Source', 'Created', 'Resolution due', 'SLA state']);
         foreach ($list as $t) {
-            fputcsv($out, [
+            // Subjects and names come from requesters (portal, inbound email):
+            // neutralise anything a spreadsheet would run as a formula.
+            fputcsv($out, ReportsController::csvRow([
                 $t['code'], $t['subject'],
                 $users[(int) $t['requester_id']]['name'] ?? '',
                 $t['agent_id'] ? ($users[(int) $t['agent_id']]['name'] ?? '') : 'Unassigned',
                 $t['status'], $t['priority'], $t['type'], $t['category'], $t['source'],
                 $t['created_at'], $t['res_due'], th_sla($t)['state'],
-            ]);
+            ]));
         }
         rewind($out);
         $csv = stream_get_contents($out);
@@ -419,7 +421,9 @@ class TicketsController extends BaseController
                 $upd['status'] = 'Open';
             }
         }
-        if ($this->request->getPost('resolve_on_send')) {
+        if ($this->request->getPost('resolve_on_send') && $this->approvalBlocksStatus((int) $t['id'], 'Resolved')) {
+            $this->toast('Reply sent, but the ticket stays open: it is still waiting on an approval', 'warn');
+        } elseif ($this->request->getPost('resolve_on_send')) {
             $upd['status'] = 'Resolved';
             $upd['resolved_at'] = $now;
             $this->addSystemNote((int) $t['id'], 'Status changed to Resolved');
@@ -515,6 +519,9 @@ class TicketsController extends BaseController
             case 'status':
                 if (! isset(TH_STATUS[$value])) {
                     return $fail('That is not a valid status');
+                }
+                if ($this->approvalBlocksStatus((int) $t['id'], $value)) {
+                    return $fail('This request is still waiting on an approval — approve or reject it first');
                 }
                 $upd['status'] = $value;
                 $upd += $this->resolvedAtFor($t, $value, $now);
@@ -617,6 +624,11 @@ class TicketsController extends BaseController
     public function resolve(string $code)
     {
         $t = $this->ticketScoped($code);
+        if ($t && $this->approvalBlocksStatus((int) $t['id'], 'Resolved')) {
+            $this->toast('This request is still waiting on an approval — approve or reject it first', 'warn');
+
+            return redirect()->to('/app/tickets/' . $t['code']);
+        }
         if ($t) {
             $this->db->transStart();
             $t = $this->lockTicket((int) $t['id']) ?? $t;
@@ -891,6 +903,12 @@ class TicketsController extends BaseController
         $ap = $this->pendingApproval((int) $t['id']);
         if (! $ap) {
             $this->toast('There is nothing awaiting approval on this ticket', 'warn');
+
+            return redirect()->to('/app/tickets/' . $code);
+        }
+        // Same rule as change approvals: nobody signs off their own request.
+        if ((int) $t['requester_id'] === (int) $this->me['id']) {
+            $this->toast('You cannot decide an approval on your own request — another supervisor or administrator must', 'warn');
 
             return redirect()->to('/app/tickets/' . $code);
         }
@@ -1341,7 +1359,13 @@ class TicketsController extends BaseController
                 // Per row rather than one bulk statement: the reopen counter, the
                 // stop-the-clock accounting and resolved_at all depend on where
                 // each ticket was.
+                $heldBack = 0;
                 foreach ($statusRows as $row) {
+                    if ($this->approvalBlocksStatus((int) $row['id'], $value)) {
+                        $heldBack++;
+
+                        continue;
+                    }
                     $upd = ['status' => $value, 'updated_at' => $now] + $this->resolvedAtFor($row, $value, $now);
                     $this->db->table('tickets')->where('id', $row['id'])->update(th_status_change($row, $upd));
                     $this->addSystemNote((int) $row['id'], 'Status changed to ' . $value);
@@ -1354,7 +1378,8 @@ class TicketsController extends BaseController
                     $this->notify('Status → Resolved', $row);
                 }
                 $this->fireUpdated($ids);
-                $this->toast(count($ids) . ' tickets updated');
+                $this->toast((count($ids) - $heldBack) . ' tickets updated'
+                    . ($heldBack ? ' — ' . $heldBack . ' left as they were: still waiting on an approval' : ''), $heldBack ? 'warn' : 'ok');
                 break;
 
             case 'priority':

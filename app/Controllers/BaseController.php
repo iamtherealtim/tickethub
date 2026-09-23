@@ -100,6 +100,17 @@ abstract class BaseController extends Controller
 
             return;
         }
+        // A cookie minted from a local-password sign-in must not outlive a
+        // later "require single sign-on" policy that covers this account.
+        if (in_array($user['auth_provider'] ?? 'local', ['local', '', null], true)
+            && \App\Libraries\Users::localPasswordBlocked($user)) {
+            $this->db->table('users')->where('id', $user['id'])->update([
+                'remember_selector' => null, 'remember_validator' => null, 'remember_expires' => null,
+            ]);
+            $this->response->deleteCookie('th_remember');
+
+            return;
+        }
         $this->session->regenerate();
         $this->session->set(['user_id' => (int) $user['id'], 'role' => $user['role'], 'name' => $user['name'], 'session_epoch' => (int) ($user['session_epoch'] ?? 0)]);
         $this->issueRememberCookie((int) $user['id']); // rotate the validator on every use
@@ -271,6 +282,23 @@ abstract class BaseController extends Controller
      * existing group. Everyone else: only their own group — or the group the
      * ticket is already in (a no-op move is not an escape).
      */
+    /**
+     * A service request waiting on an approval cannot be resolved or closed
+     * by anyone — not even a supervisor — until the approval is decided with
+     * Approve/Reject. Otherwise any agent could deliver something nobody
+     * signed off on just by changing the status, and the decision would never
+     * be recorded.
+     */
+    protected function approvalBlocksStatus(int $ticketId, string $newStatus): bool
+    {
+        if (! in_array($newStatus, ['Resolved', 'Closed'], true)) {
+            return false;
+        }
+
+        return $this->db->table('ticket_approvals')
+            ->where('ticket_id', $ticketId)->where('status', 'Pending')->countAllResults() > 0;
+    }
+
     protected function canUseGroup(int $groupId, ?array $ticket = null): bool
     {
         if ($groupId <= 0 || ! $this->db->table('groups')->where('id', $groupId)->countAllResults()) {

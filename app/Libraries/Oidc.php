@@ -57,6 +57,10 @@ class Oidc
             return $doc;
         }
         $url = str_ends_with($issuer, '/.well-known/openid-configuration') ? $issuer : $issuer . '/.well-known/openid-configuration';
+        helper('tickethub');
+        if ($err = th_outbound_url_error($url)) {
+            throw new \RuntimeException('OIDC issuer refused: ' . $err);
+        }
         $res = self::client()->get($url);
         $doc = json_decode((string) $res->getBody(), true);
         if ($res->getStatusCode() !== 200 || ! is_array($doc) || empty($doc['authorization_endpoint']) || empty($doc['token_endpoint'])) {
@@ -65,6 +69,16 @@ class Oidc
         // Per spec the document's issuer must match the URL it was fetched from.
         if (rtrim((string) ($doc['issuer'] ?? ''), '/') !== $issuer) {
             throw new \RuntimeException('Discovery document issuer (' . ($doc['issuer'] ?? '?') . ') does not match the configured issuer.');
+        }
+        // The server calls these itself (and sends the client secret to one of
+        // them), so a discovery document must not point them inside the network.
+        foreach (['token_endpoint', 'jwks_uri', 'userinfo_endpoint'] as $k) {
+            if (! empty($doc[$k]) && ($err = th_outbound_url_error((string) $doc[$k]))) {
+                throw new \RuntimeException('Discovery document ' . $k . ' refused: ' . $err);
+            }
+            if (! empty($doc[$k]) && ! preg_match('#^https://#i', (string) $doc[$k])) {
+                throw new \RuntimeException('Discovery document ' . $k . ' must be https.');
+            }
         }
         cache()->save($key, $doc, self::CACHE_TTL);
 

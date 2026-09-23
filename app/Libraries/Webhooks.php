@@ -126,6 +126,12 @@ class Webhooks
      * Queue and attempt delivery of one event to every matching endpoint.
      * Never throws: a webhook problem must not break the action that caused it.
      */
+    /** The endpoint's signing secret in plaintext (stored encrypted when encryption.key is set). */
+    public static function secret(array $ep): string
+    {
+        return Settings::decryptValue((string) ($ep['secret'] ?? ''), 'webhook secret');
+    }
+
     public static function dispatch(string $event, array $payload): void
     {
         try {
@@ -216,24 +222,22 @@ class Webhooks
 
         $status  = null;
         $excerpt = '';
+        helper('tickethub');
         try {
-            if ($err = th_outbound_url_error((string) $ep['url'])) {
-                throw new \RuntimeException($err);
+            // Validates the URL and pins the connection to the checked address
+            // (no DNS rebinding into the internal network, no redirects).
+            $res = th_outbound_post((string) $ep['url'], $body, [
+                'Content-Type'          => 'application/json',
+                'User-Agent'            => 'TicketHub-Webhooks/1.0',
+                'X-TicketHub-Event'     => $delivery['event'],
+                'X-TicketHub-Delivery'  => (string) $delivery['id'],
+                'X-TicketHub-Signature' => 'sha256=' . hash_hmac('sha256', $body, self::secret($ep)),
+            ], self::TIMEOUT);
+            if ($res['error'] !== null && $res['status'] === null) {
+                throw new \RuntimeException($res['error']);
             }
-            $res = service('curlrequest', [], null, null, false)->post($ep['url'], [
-                'body'        => $body,
-                'timeout'     => self::TIMEOUT,
-                'http_errors' => false,
-                'headers'     => [
-                    'Content-Type'          => 'application/json',
-                    'User-Agent'            => 'TicketHub-Webhooks/1.0',
-                    'X-TicketHub-Event'     => $delivery['event'],
-                    'X-TicketHub-Delivery'  => (string) $delivery['id'],
-                    'X-TicketHub-Signature' => 'sha256=' . hash_hmac('sha256', $body, (string) $ep['secret']),
-                ],
-            ]);
-            $status  = $res->getStatusCode();
-            $excerpt = mb_substr((string) $res->getBody(), 0, 500);
+            $status  = $res['status'];
+            $excerpt = mb_substr($res['body'], 0, 500);
         } catch (\Throwable $e) {
             $excerpt = mb_substr('Error: ' . $e->getMessage(), 0, 500);
         }

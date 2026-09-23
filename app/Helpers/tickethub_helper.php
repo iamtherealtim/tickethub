@@ -801,19 +801,141 @@ function th_outbound_url_error(string $url): ?string
         return 'Only http and https URLs are allowed.';
     }
 
-    $host = strtolower($parts['host']);
-    $ips  = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : (gethostbynamel($host) ?: []);
-    foreach ($ips as $ip) {
-        // 169.254.0.0/16 covers the AWS/Azure/GCP metadata endpoints.
-        if (str_starts_with($ip, '169.254.')) {
-            return 'That address range (link-local / cloud metadata) is not allowed.';
-        }
+    $error = null;
+    th_outbound_resolve($url, $error);
+
+    return $error;
+}
+
+/**
+ * Resolve an outbound URL and check every address it points at.
+ *
+ * Returns ['host', 'port', 'ip'] with the one address a request should be
+ * pinned to (see th_outbound_post), or null with $error set. Refused:
+ *  - anything that is not http/https;
+ *  - loopback, private, link-local, CGNAT, multicast and other non-public
+ *    ranges, in IPv4 and IPv6 (including IPv4-mapped IPv6 like
+ *    [::ffff:169.254.169.254], and AWS's IPv6 metadata fd00:ec2::254);
+ *  - a name that resolves to no address at all.
+ * Setting "outbound_allow_private" = 1 lets integrations reach private
+ * networks (an internal automation server, say) — cloud metadata and
+ * loopback stay blocked regardless.
+ */
+function th_outbound_resolve(string $url, ?string &$error = null): ?array
+{
+    $error = null;
+    $parts = parse_url(trim($url));
+    if (! $parts || empty($parts['scheme']) || empty($parts['host'])) {
+        $error = 'That does not look like a valid URL.';
+
+        return null;
     }
-    if (in_array($host, ['metadata.google.internal', 'metadata'], true)) {
-        return 'That host is not allowed.';
+    $scheme = strtolower($parts['scheme']);
+    if (! in_array($scheme, ['http', 'https'], true)) {
+        $error = 'Only http and https URLs are allowed.';
+
+        return null;
+    }
+    $host = strtolower(trim($parts['host'], '[]'));
+    $port = (int) ($parts['port'] ?? ($scheme === 'https' ? 443 : 80));
+    if (in_array($host, ['localhost', 'metadata', 'metadata.google.internal'], true) || str_ends_with($host, '.localhost')) {
+        $error = 'That host is not allowed.';
+
+        return null;
     }
 
-    return null;
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        $ips = [$host];
+    } else {
+        $ips = [];
+        foreach (@dns_get_record($host, DNS_A | DNS_AAAA) ?: [] as $rec) {
+            if (! empty($rec['ip'])) {
+                $ips[] = $rec['ip'];
+            } elseif (! empty($rec['ipv6'])) {
+                $ips[] = $rec['ipv6'];
+            }
+        }
+        if (! $ips) {
+            $ips = gethostbynamel($host) ?: [];
+        }
+    }
+    if (! $ips) {
+        $error = 'That host name does not resolve.';
+
+        return null;
+    }
+
+    $allowPrivate = \App\Libraries\Settings::get('outbound_allow_private') === '1';
+    foreach ($ips as $ip) {
+        $check = $ip;
+        // IPv4-mapped IPv6 (::ffff:a.b.c.d) is really that IPv4 address.
+        if (preg_match('/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i', $ip, $m)) {
+            $check = $m[1];
+        }
+        $always = str_starts_with($check, '169.254.') || str_starts_with($check, '127.') || $check === '0.0.0.0'
+            || in_array(strtolower($check), ['::1', '::', 'fd00:ec2::254'], true)
+            || stripos($check, 'fe80:') === 0;
+        if ($always) {
+            $error = 'That address (loopback, link-local or cloud metadata) is not allowed.';
+
+            return null;
+        }
+        $public = filter_var($check, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE | FILTER_FLAG_GLOBAL_RANGE);
+        if ($public === false && ! $allowPrivate) {
+            $error = 'That address is on a private or reserved network. Internal targets are blocked unless an administrator allows them.';
+
+            return null;
+        }
+    }
+
+    return ['host' => $host, 'port' => $port, 'ip' => $ips[0]];
+}
+
+/**
+ * POST to an outbound URL with the connection pinned to the address that was
+ * just validated, so a DNS answer that changes between the check and the
+ * connect (DNS rebinding) cannot redirect the request inside the network.
+ * Redirects are not followed. Returns ['status' => ?int, 'body' => string,
+ * 'error' => ?string]; the body is truncated to 64 KB.
+ */
+function th_outbound_post(string $url, string $body, array $headers, int $timeout = 5): array
+{
+    $error  = null;
+    $target = th_outbound_resolve($url, $error);
+    if (! $target) {
+        return ['status' => null, 'body' => '', 'error' => $error];
+    }
+    $pinIp = str_contains($target['ip'], ':') ? '[' . $target['ip'] . ']' : $target['ip'];
+    $lines = [];
+    foreach ($headers as $k => $v) {
+        $lines[] = $k . ': ' . str_replace(["\r", "\n"], '', (string) $v);
+    }
+    $buffer = '';
+    $ch     = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST            => true,
+        CURLOPT_POSTFIELDS      => $body,
+        CURLOPT_HTTPHEADER      => $lines,
+        CURLOPT_RESOLVE         => [$target['host'] . ':' . $target['port'] . ':' . $pinIp],
+        CURLOPT_FOLLOWLOCATION  => false,
+        CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+        CURLOPT_CONNECTTIMEOUT  => $timeout,
+        CURLOPT_TIMEOUT         => $timeout,
+        CURLOPT_RETURNTRANSFER  => false,
+        CURLOPT_WRITEFUNCTION   => static function ($ch, $chunk) use (&$buffer) {
+            if (strlen($buffer) < 65536) {
+                $buffer .= substr($chunk, 0, 65536 - strlen($buffer));
+            }
+
+            return strlen($chunk);
+        },
+    ]);
+    $ok     = curl_exec($ch);
+    $status = $ok === false ? null : (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $err    = $ok === false ? curl_error($ch) : null;
+    curl_close($ch);
+
+    return ['status' => $status, 'body' => $buffer, 'error' => $err];
 }
 
 /** Render one admin-defined custom field (ticket_fields row) as a form control. */

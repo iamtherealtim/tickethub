@@ -655,7 +655,7 @@ $orgSelect = static function (?int $current) use ($orgs) {
 
             . '<div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Directory (tenant) ID</label>'
             . '<input name="azure_tenant_id" value="' . esc($settings['azure_tenant_id'] ?? '', 'attr') . '" placeholder="00000000-0000-0000-0000-000000000000" class="' . $inputCls . ' font-mono text-[12px]">'
-            . '<p class="text-[11.5px] text-faint mt-1">Required. Use your directory GUID so tokens are pinned to your tenant. <code class="font-mono">common</code> or <code class="font-mono">organizations</code> also work but let any work or school account sign in — keep auto-provisioning off if you use them.</p></div>'
+            . '<p class="text-[11.5px] text-faint mt-1">Required. Your directory (tenant) ID — a GUID from Entra → Overview. Every token is pinned to it; multi-tenant <code class="font-mono">common</code>/<code class="font-mono">organizations</code> are not accepted because they let any outside tenant claim your users\' email addresses.</p></div>'
             . '<div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Application (client) ID</label>'
             . '<input name="azure_client_id" value="' . esc($settings['azure_client_id'] ?? '', 'attr') . '" class="' . $inputCls . ' font-mono text-[12px]"></div>'
 

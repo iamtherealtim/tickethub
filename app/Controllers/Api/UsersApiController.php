@@ -120,6 +120,12 @@ class UsersApiController extends ApiController
                 $upd[$k] = $v !== '' ? $v : null;
             }
         }
+        // Organization, like role and group, is an admin decision (the web UI
+        // only lets Administrators edit people), so check before applying it.
+        $adminOnly = array_intersect(array_keys($in), ['email', 'role', 'active', 'group_id', 'org_id']);
+        if ($adminOnly && ! $this->isAdmin()) {
+            return $this->fail('Only an Administrator token can change ' . implode(', ', $adminOnly), 403);
+        }
         if ($err = $this->applyOrg($upd, $in)) {
             return $err;
         }

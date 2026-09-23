@@ -219,13 +219,14 @@ class AutomationEngine
         ];
 
         try {
-            $res = service('curlrequest', [], null, null, false)->post($url, [
-                'json'        => $payload,
-                'timeout'     => 5,
-                'http_errors' => false,
-                'headers'     => ['User-Agent' => 'TicketHub-Automation/1.0'],
-            ]);
-            $code = $res->getStatusCode();
+            $res = th_outbound_post($url, (string) json_encode($payload), [
+                'Content-Type' => 'application/json',
+                'User-Agent'   => 'TicketHub-Automation/1.0',
+            ], 5);
+            if ($res['status'] === null) {
+                throw new \RuntimeException((string) $res['error']);
+            }
+            $code = $res['status'];
 
             return $code >= 200 && $code < 300
                 ? 'webhook delivered (' . $code . ')'

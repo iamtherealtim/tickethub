@@ -87,6 +87,7 @@ class IdentityController extends BaseController
             'oidc_agent_value'  => trim((string) ($p['oidc_agent_value'] ?? '')),
             'oidc_admin_claim'  => trim((string) ($p['oidc_admin_claim'] ?? '')),
             'oidc_admin_value'  => trim((string) ($p['oidc_admin_value'] ?? '')),
+            'oidc_allowed_domains' => strtolower(trim((string) ($p['oidc_allowed_domains'] ?? ''))),
         ], ['oidc_client_secret']);
         if ($issuer !== '') {
             cache()->delete('oidc_disc_' . md5($issuer));
@@ -181,6 +182,8 @@ class IdentityController extends BaseController
             'saml_agent_value'   => trim((string) ($p['saml_agent_value'] ?? '')),
             'saml_admin_attr'    => trim((string) ($p['saml_admin_attr'] ?? '')),
             'saml_admin_value'   => trim((string) ($p['saml_admin_value'] ?? '')),
+            'saml_allowed_domains'      => strtolower(trim((string) ($p['saml_allowed_domains'] ?? ''))),
+            'saml_allow_idp_initiated'  => isset($p['saml_allow_idp_initiated']) ? '1' : '0',
         ]);
         Audit::log('settings.saml', trim((string) ($p['saml_idp_entity_id'] ?? '')) ?: '(cleared)');
         if (Saml::available()) {

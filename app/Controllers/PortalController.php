@@ -319,13 +319,32 @@ class PortalController extends CatalogController
     }
 
     /**
-     * GET portal/rate/(token)/(score). Score 1–5 records the rating once; 0
-     * (or an already-rated ticket) just shows the page. The token is single
-     * use for scoring; a comment is accepted once within seven days.
+     * GET portal/rate/(token)/(score) from the rating email: show the score picker with the tapped score
+     * highlighted, but record nothing. Mail security scanners (Safe Links,
+     * Mimecast, …) open every link in a message, so a GET that saved a score
+     * would let the scanner "vote" before the person ever saw the email.
      */
     public function rateByToken(string $token, int $score)
     {
         $t = $this->ticketByCsatToken($token);
+        if (! $t) {
+            return $this->ratePage(['state' => 'invalid', 't' => null, 'token' => $token]);
+        }
+        if (th_is_open($t)) {
+            return $this->ratePage(['state' => 'open', 't' => $t, 'token' => $token]);
+        }
+        if ($t['csat_score'] !== null) {
+            return $this->ratePage(['state' => 'rated', 't' => $t, 'token' => $token, 'canComment' => $this->canComment($t)]);
+        }
+
+        return $this->ratePage(['state' => 'pick', 't' => $t, 'token' => $token, 'preselect' => ($score >= 1 && $score <= 5) ? $score : 0]);
+    }
+
+    /** POST from the picker: the one place a score is actually recorded. */
+    public function rateSubmit(string $token)
+    {
+        $score = (int) $this->request->getPost('score');
+        $t     = $this->ticketByCsatToken($token);
         if (! $t) {
             return $this->ratePage(['state' => 'invalid', 't' => null, 'token' => $token]);
         }
