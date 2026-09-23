@@ -79,11 +79,14 @@ put a TLS-terminating proxy in front before exposing it.
 Requirements: PHP 8.2+ with `intl`, `mbstring`, `mysqli`, `curl`, `openssl`,
 `json` (plus `gd` for image thumbnails and `ldap` for directory sign-in);
 MySQL 8.0+ or MariaDB 10.6+; Apache with `mod_rewrite`, nginx or Caddy with
-the document root at `public/`; cron. Composer is only needed for the test
-suite — the framework lives in `system/`.
+the document root at `public/`; cron. The framework itself lives in `system/`
+and needs no Composer step, but SAML sign-in is a real package — run
+`composer install --no-dev` once to enable it (the Docker image already
+does). Everything else works without ever running Composer.
 
 ```bash
 git clone https://github.com/<org>/tickethub.git tickethub && cd tickethub
+composer install --no-dev           # optional — only needed for SAML sign-in
 cp env.production.example .env      # then edit: baseURL, database.default.*
 php spark key:generate              # writes encryption.key into .env
 php spark migrate --all             # creates the schema (no demo data)
@@ -172,7 +175,7 @@ Two ways to turn mail into tickets and replies:
   `/api/inbound-email` with the `X-Inbound-Secret` header. Unknown senders
   are handled by the policy you pick (create requester / reject).
 
-### SSO / OIDC / LDAP and 2FA
+### SSO / SAML / OIDC / LDAP and 2FA
 
 <!-- SECTION: identity -->
 **Two-factor authentication.** Any user can enrol an authenticator app (Google or Microsoft Authenticator, Authy, 1Password) at Account → Security: scan the QR code, confirm a code, and save the ten one-time recovery codes. Admin → Identity & 2FA sets the policy (optional, required for agents, or required for everyone); users in scope are held on the Security page until enrolled. Administrators can reset a user's 2FA there. Secrets are encrypted at rest when `encryption.key` is set.
@@ -180,6 +183,8 @@ Two ways to turn mail into tickets and replies:
 **Single sign-on (Microsoft Entra ID).** Admin → Single sign-on: tenant, client ID and secret; redirect URI `<base>/auth/azure/callback`. Optional Entra group IDs map members to Agent or Administrator.
 
 **Single sign-on (OpenID Connect / Google).** Admin → Identity & 2FA → OpenID Connect: click *Google Workspace* (issuer `https://accounts.google.com`) or enter any issuer with a discovery document (Okta, Keycloak, Auth0, Authentik); add redirect URI `<base>/auth/oidc/callback` at the provider; paste client ID and secret. Existing accounts match by email; new people are created as Requesters. Optional role mapping: claim and value for Agent and Administrator (for example `groups` contains `it-admins`). Supervisors and the last Administrator are never demoted.
+
+**Single sign-on (SAML 2.0).** Admin → Identity & 2FA → SAML: paste the identity provider's metadata URL and TicketHub imports the entity ID, SSO URL and signing certificate (fetched over HTTPS with certificate validation), or fill those three fields in by hand. Give the provider our metadata at `<base>/auth/saml/metadata`, or its ACS URL and entity ID directly. Every assertion must be signed — an unsigned or tampered response is rejected regardless of any other setting — and signature verification is done by the widely used `onelogin/php-saml` toolkit rather than by hand. The email comes from the NameID (emailAddress format) unless you map a specific attribute; optional role mapping works the same way as OIDC. Requires `composer install` (bundled in the Docker image already); the tab says so and disables itself if the package is missing.
 
 **LDAP / Active Directory.** Requires the php-ldap extension. Configure host, port, encryption, a read-only bind account, base DN and user filter (`{login}` is what was typed). On sign-in, unknown emails and directory-linked accounts are verified against the directory, profile attributes are synced, and `memberOf` can map roles. Local accounts keep local passwords; 2FA still applies.
 
@@ -276,7 +281,6 @@ Back up, pull the release, run `php spark migrate --all`, clear
 
 ## Roadmap
 
-- SAML 2.0 sign-in alongside OIDC and LDAP
 - Mobile PWA for agents (offline-tolerant queue, push notifications)
 - Additional languages beyond English and French — see
   [docs/i18n.md](docs/i18n.md) to contribute one

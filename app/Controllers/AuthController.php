@@ -6,6 +6,7 @@ use App\Libraries\Audit;
 use App\Libraries\Ldap;
 use App\Libraries\Mailer;
 use App\Libraries\Oidc;
+use App\Libraries\Saml;
 use App\Libraries\Settings;
 use App\Libraries\Totp;
 
@@ -37,6 +38,8 @@ class AuthController extends BaseController
             'oidcEnabled'  => Oidc::enabled(),
             'oidcLabel'    => Oidc::buttonLabel(),
             'ldapEnabled'  => Ldap::enabled(),
+            'samlEnabled'  => Saml::enabled(),
+            'samlLabel'    => Saml::buttonLabel(),
         ]);
     }
 
@@ -669,6 +672,104 @@ class AuthController extends BaseController
         }
 
         return $this->beginLogin($user, false, 'oidc');
+    }
+
+    /* ---------- SAML 2.0 ---------- */
+
+    public function saml()
+    {
+        if (! Saml::enabled()) {
+            $this->session->setFlashdata('error', 'Single sign-on is not enabled or not fully configured.');
+
+            return redirect()->to('/login');
+        }
+
+        try {
+            return redirect()->to(Saml::loginUrl());
+        } catch (\Throwable $e) {
+            log_message('error', 'SAML start failed: {msg}', ['msg' => $e->getMessage()]);
+            $this->session->setFlashdata('error', 'Single sign-on failed: could not build the sign-in request.');
+
+            return redirect()->to('/login');
+        }
+    }
+
+    /** Assertion Consumer Service — the IdP POSTs the signed response here. */
+    public function samlAcs()
+    {
+        $label = Saml::buttonLabel();
+        if (! Saml::enabled()) {
+            return redirect()->to('/login');
+        }
+
+        try {
+            $result = Saml::processAcs();
+        } catch (\RuntimeException $e) {
+            log_message('error', 'SAML sign-in rejected: {msg}', ['msg' => $e->getMessage()]);
+            $this->session->setFlashdata('error', $label . ' failed: ' . $e->getMessage());
+
+            return redirect()->to('/login');
+        } catch (\Throwable $e) {
+            log_message('error', 'SAML exception: {msg}', ['msg' => $e->getMessage()]);
+            $this->session->setFlashdata('error', $label . ' failed: could not reach the identity provider.');
+
+            return redirect()->to('/login');
+        }
+
+        $email = $result['email'];
+        $name  = $result['name'] !== '' ? $result['name'] : $email;
+        $mappedRole = Saml::roleFromAttributes($result['attributes']);
+
+        $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+        if (! $user) {
+            $now  = date('Y-m-d H:i:s');
+            $role = $mappedRole ?? 'Requester';
+            $this->db->table('users')->insert([
+                'name' => mb_substr($name, 0, 100), 'email' => $email,
+                'password_hash' => password_hash(bin2hex(random_bytes(24)), PASSWORD_DEFAULT),
+                'role' => $role, 'title' => $role === 'Requester' ? 'Employee' : 'Support Analyst',
+                'group_id' => $role === 'Requester' ? null : ((int) Settings::get('default_group_id', '1') ?: null),
+                'color' => ['brand', 'ink', 'violet', 'signal'][random_int(0, 3)],
+                'active' => 1, 'auth_provider' => 'saml',
+                'created_at' => $now, 'updated_at' => $now,
+            ]);
+            $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+            Audit::log('saml.provisioned', $email . ' as ' . $role, (int) $user['id']);
+        } else {
+            $update = [];
+            $this->applyMappedRole($user, $mappedRole, $update, 'saml');
+            if ($update) {
+                $update['updated_at'] = date('Y-m-d H:i:s');
+                $this->db->table('users')->where('id', $user['id'])->update($update);
+                $user = array_merge($user, $update);
+            }
+        }
+
+        if (! (int) $user['active']) {
+            $this->session->setFlashdata('error', 'This account has been deactivated. Contact an administrator.');
+
+            return redirect()->to('/login');
+        }
+
+        return $this->beginLogin($user, false, 'saml');
+    }
+
+    /** SP metadata for the IdP to import — public, no session, no secrets. */
+    public function samlMetadata()
+    {
+        if (! Saml::available()) {
+            throw \CodeIgniter\Exceptions\PageNotFoundException::forPageNotFound();
+        }
+
+        try {
+            $xml = Saml::metadataXml();
+        } catch (\Throwable $e) {
+            log_message('error', 'SAML metadata generation failed: {msg}', ['msg' => $e->getMessage()]);
+
+            return $this->response->setStatusCode(500)->setBody('Could not generate metadata.');
+        }
+
+        return $this->response->setContentType('text/xml')->setBody($xml);
     }
 
     /**

@@ -15,6 +15,12 @@ $routes->post('login/2fa', 'AuthController::twoFactorVerify');
 $routes->get('auth/oidc', 'AuthController::oidc');
 $routes->get('auth/oidc/callback', 'AuthController::oidcCallback');
 
+// SAML 2.0. The ACS is CSRF-exempt (Config/Filters.php) — the POST comes from
+// the IdP, not one of our own forms. Metadata is public so an IdP can fetch it.
+$routes->get('auth/saml', 'AuthController::saml');
+$routes->post('auth/saml/acs', 'AuthController::samlAcs');
+$routes->get('auth/saml/metadata', 'AuthController::samlMetadata');
+
 // Any signed-in user: own security + notification preferences.
 $routes->group('', ['filter' => 'portalAuth'], static function ($routes) {
     $routes->get('account/security', 'AccountController::security');
@@ -34,4 +40,6 @@ $routes->group('app', ['filter' => 'adminAuth'], static function ($routes) {
     $routes->post('admin/identity/oidc/test', 'Admin\IdentityController::testOidc');
     $routes->post('admin/identity/ldap', 'Admin\IdentityController::saveLdap');
     $routes->post('admin/identity/ldap/test', 'Admin\IdentityController::testLdap');
+    $routes->post('admin/identity/saml', 'Admin\IdentityController::saveSaml');
+    $routes->post('admin/identity/saml/fetch-metadata', 'Admin\IdentityController::fetchSamlMetadata');
 });

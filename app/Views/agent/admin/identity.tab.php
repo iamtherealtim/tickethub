@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Admin → Identity: two-factor policy, generic OpenID Connect, LDAP / AD.
+ * Admin → Identity: two-factor policy, generic OpenID Connect, LDAP / AD, SAML.
  * Body: identity.php. Actions: App\Controllers\Admin\IdentityController.
  */
 return [
@@ -19,9 +19,13 @@ return [
         }
 
         return [
-            'mfaUsers'      => $mfaUsers,
-            'ldapAvailable' => \App\Libraries\Ldap::available(),
-            'oidcCallback'  => site_url('auth/oidc/callback'),
+            'mfaUsers'        => $mfaUsers,
+            'ldapAvailable'   => \App\Libraries\Ldap::available(),
+            'oidcCallback'    => site_url('auth/oidc/callback'),
+            'samlAvailable'   => \App\Libraries\Saml::available(),
+            'samlAcsUrl'      => site_url('auth/saml/acs'),
+            'samlMetadataUrl' => site_url('auth/saml/metadata'),
+            'samlEntityId'    => \App\Libraries\Saml::available() ? \App\Libraries\Saml::spEntityId() : site_url('auth/saml/metadata'),
         ];
     },
 ];
