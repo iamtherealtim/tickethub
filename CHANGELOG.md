@@ -17,6 +17,16 @@ Upgrade notes for operators live in [docs/UPGRADING.md](docs/UPGRADING.md).
   hand-rolled; every assertion must be signed. This is the one optional
   feature that needs `composer install` — everything else still runs
   without it.
+- **Published Docker images** for amd64 and arm64:
+  `ghcr.io/iamtherealtim/tickethub` and `ghcr.io/iamtherealtim/tickethub-caddy`.
+  They're built and pushed by CI only after every test, including the
+  full-stack test, has passed. Tags: `latest`, `1.1.0`, `1.1`, `1` for
+  releases, and `edge` for `main`. Running TicketHub is now two files,
+  [`docker/compose.yaml`](docker/compose.yaml) and a `.env`, with no clone or
+  build. That's paste-and-deploy in Dockge, Portainer or a TrueNAS custom
+  app, whose Update buttons now work. `TICKETHUB_HTTP_BIND` /
+  `TICKETHUB_HTTPS_BIND` bind to one IP (e.g. a NAS alias) or another port.
+  The site address follows automatically, including the port.
 - **HTTPS out of the box with Docker.** A bundled Caddy now sits in front of
   the app on ports 80 and 443. Set `TICKETHUB_DOMAIN` and choose
   `TICKETHUB_TLS`:
@@ -42,6 +52,14 @@ Upgrade notes for operators live in [docs/UPGRADING.md](docs/UPGRADING.md).
   when it's still localhost.
 
 ### Changed
+
+- **Docker layout:** the compose file moved to `docker/compose.yaml` and
+  pulls published images; `compose.build.yaml` builds from source instead.
+  Settings moved from `.env.docker` to a standard `.env` next to the compose
+  file, which is what Dockge and Portainer edit. It lives in `docker/`, so it
+  doesn't clash with the app's own `.env`. MariaDB's settings come from
+  `DB_*` (the separate `MARIADB_*` values are gone), and MariaDB's root
+  password is now random, since nothing uses it.
 
 - **PHP 8.3 is now the minimum** (was 8.2, whose security support ends on
   31 December 2026). `public/index.php` and `spark` refuse to start on older
@@ -71,7 +89,7 @@ Upgrade notes for operators live in [docs/UPGRADING.md](docs/UPGRADING.md).
   `.env` (and Docker's `APP_PROXY_IPS`) was silently ignored, because
   CodeIgniter only fills array settings key by key. It's now parsed as a
   comma-separated list, e.g. `app.proxyIPs = 10.0.0.5/32`.
-- **Docker ignored changes to `.env.docker` after the first boot.** The
+- **Docker ignored changes to its settings after the first boot.** The
   environment, address, proxies and database settings are now re-applied
   on every start. The encryption key and any keys you added by hand are kept.
 - **The Docker image did not actually work.** CI only ever built it; the new

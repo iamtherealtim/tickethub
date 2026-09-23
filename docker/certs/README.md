@@ -7,7 +7,7 @@ Put two PEM files here, then `docker compose up -d`:
 | `tls.crt` | The site certificate, followed by any intermediate certificates          |
 | `tls.key` | Its private key, **without** a passphrase                                |
 
-Other file names: set `TICKETHUB_CERT_FILE` / `TICKETHUB_KEY_FILE` in `.env.docker`.
+Other file names: set `TICKETHUB_CERT_FILE` / `TICKETHUB_KEY_FILE` in the Docker `.env` (next to `compose.yaml`).
 
 Got a `.pfx` / `.p12` from Windows or your CA?
 

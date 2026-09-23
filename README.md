@@ -67,16 +67,28 @@ no queue workers, no Composer at runtime. Clone it, point a web server at
 
 ## Quick start with Docker
 
+TicketHub runs from two files: [`docker/compose.yaml`](docker/compose.yaml)
+and a `.env` next to it, which you create from
+[`docker/.env.example`](docker/.env.example). The images are published to the
+GitHub Container Registry for amd64 and arm64, so nothing needs building.
+
 ```bash
-cp docker/.env.docker.example .env.docker      # set TICKETHUB_DOMAIN and the passwords
-docker compose up -d --build
+mkdir tickethub && cd tickethub
+curl -fsSLO https://raw.githubusercontent.com/iamtherealtim/tickethub/main/docker/compose.yaml
+curl -fsSL  https://raw.githubusercontent.com/iamtherealtim/tickethub/main/docker/.env.example -o .env
+nano .env                       # set DB_PASSWORD and TICKETHUB_DOMAIN
+docker compose up -d
 docker compose exec app php spark tickethub:setup --email you@company.com --name "Your Name"
 ```
 
-The first command configures the stack, and the second builds it and starts
-it. The third prints a one-time password for the first Administrator. Sign in
-at `https://<your domain>/login`, or at http://localhost/login if you left
-`TICKETHUB_DOMAIN` empty for a local try-out, and choose your own password.
+The last command prints a one-time password for the first Administrator.
+Sign in at `https://<your domain>/login`, or at http://localhost/login if you
+left `TICKETHUB_DOMAIN` empty for a local try-out, and choose your own password.
+
+**Dockge, Portainer or a TrueNAS custom app:** create a stack and paste
+`compose.yaml` as its compose file and `.env.example` as its `.env`. Edit the
+`.env`, deploy, then run the `tickethub:setup` line in the **app** container's
+terminal. Dockge's **Update** button pulls new releases.
 
 **HTTPS comes with it.** Set `TICKETHUB_DOMAIN=helpdesk.example.com` and pick
 where the certificate comes from with `TICKETHUB_TLS`:
@@ -85,23 +97,34 @@ where the certificate comes from with `TICKETHUB_TLS`:
 |---|---|
 | `auto` | Public sites: a free Let's Encrypt certificate, renewed automatically |
 | `dns` | Internal sites on a public domain: Let's Encrypt via Cloudflare, Azure DNS or Route 53 |
-| `files` | Your own certificate, e.g. from your company CA, in `docker/certs/` |
+| `files` | Your own certificate, e.g. from your company CA, in `certs/` next to `compose.yaml` |
 | `internal` | Anything else: TicketHub's own authority; install its root on client PCs once |
 | `upstream` | A load balancer or tunnel in front already does HTTPS |
 
-Change `.env.docker` any time and run `docker compose up -d` again to apply it.
+Are ports 80 and 443 already taken, for example by a NAS's own web interface?
+Give the host an extra IP address and set
+`TICKETHUB_HTTPS_BIND=192.168.1.51:443` and `TICKETHUB_HTTP_BIND=192.168.1.51:80`.
+You can also use another port, e.g. `8443`.
+
+Change `.env` any time and run `docker compose up -d` again to apply it.
 **Admin → Address & HTTPS** shows whether the address, HTTPS and certificate
 are right, and how to fix them if not. The full guide is
 [docs/https.md](docs/https.md).
 
+**Updating:** `docker compose pull && docker compose up -d`. Migrations run
+automatically. Set `TICKETHUB_VERSION=1.1` in `.env` to stay on one release
+line, or `edge` to follow `main`.
+
 What's running:
 - `caddy` on ports 80 and 443: HTTPS and certificates.
 - `app`: Apache + PHP 8.4, with `public/` as the document root.
-- `db`: MariaDB 11 on a named volume.
+- `db`: MariaDB 11.
 - `cron`: the same image as `app`, looping over the [scheduled commands](#cron-jobs).
 
-Attachments, sessions and logs live on the `app_writable` volume, and
-certificates on `caddy_data`.
+Data lives in named volumes: `db_data` (the database), `app_writable`
+(attachments, sessions, logs) and `caddy_data` (certificates). To build the
+images yourself from a clone:
+`cd docker && docker compose -f compose.yaml -f compose.build.yaml up -d --build`.
 
 ## Manual install
 

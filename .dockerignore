@@ -1,10 +1,11 @@
 # Build context for the TicketHub image. Keep it lean: the framework lives in
 # system/ and is copied; runtime state, secrets, tests and tooling stay out.
 
-# Secrets / local config
+# Secrets / local config — at any depth (docker/.env holds the DB password)
 .env
 .env.*
-!.env.example
+**/.env
+**/.env.*
 phpunit.xml
 
 # Dependencies and build output. vendor/ is excluded from the HOST build
@@ -43,8 +44,9 @@ CHANGELOG.md
 !README.md
 
 # Docker files themselves (docker/ is needed for the entrypoint and cron loop)
-docker-compose.yml
-docker-compose.override.yml
+docker/compose*.yaml
+docker/compose*.yml
+docker-compose*.yml
 Dockerfile
 .dockerignore
 

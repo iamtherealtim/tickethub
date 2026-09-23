@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Brings the generated writable/.env in line with .env.docker on every start,
+ * Brings the generated writable/.env in line with the Docker .env on every start,
  * so changing the domain, certificate mode, database or environment and running
  * `docker compose up -d` actually takes effect. (It used to be written once, on
  * first boot, and silently ignored every later change.)
@@ -35,11 +35,16 @@ $baseUrl = $get('APP_BASE_URL');
 if ($baseUrl === 'http://localhost:8080/') {
     // The pre-Caddy template's default. The stack now answers on port 80 (or
     // on TICKETHUB_DOMAIN), so honouring it would point every link at a dead port.
-    fwrite(STDOUT, "[entrypoint] ignoring APP_BASE_URL=http://localhost:8080/ (the old default) — delete that line from .env.docker; set TICKETHUB_DOMAIN instead\n");
+    fwrite(STDOUT, "[entrypoint] ignoring APP_BASE_URL=http://localhost:8080/ (the old default) — delete that line from the Docker .env; set TICKETHUB_DOMAIN instead\n");
     $baseUrl = '';
 }
 if ($baseUrl === '') {
-    $baseUrl = $domain !== '' ? 'https://' . $domain . '/' : 'http://localhost/';
+    // "443", "8443" or "192.168.1.51:443" — only a non-standard port shows up in the address.
+    $port = static fn (string $bind, string $default): string => ($p = (string) preg_replace('/^.*:/', '', $bind)) === $default || $p === '' ? '' : ':' . $p;
+    $tls  = strtolower($get('TICKETHUB_TLS', 'auto'));
+    $baseUrl = $domain !== ''
+        ? 'https://' . $domain . ($tls === 'upstream' ? '' : $port($get('TICKETHUB_HTTPS_BIND', '443'), '443')) . '/'
+        : 'http://localhost' . $port($get('TICKETHUB_HTTP_BIND', '80'), '80') . '/';
 }
 $baseUrl = rtrim($baseUrl, '/') . '/';
 
@@ -50,8 +55,8 @@ $proxies = $get('APP_PROXY_IPS', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::
 
 $isNew = ! is_file($path);
 if ($isNew) {
-    file_put_contents($path, "# Written by docker/entrypoint.sh from .env.docker. Managed keys (environment,\n"
-        . "# address, proxies, database) are re-applied on every start; edit .env.docker\n"
+    file_put_contents($path, "# Written by docker/entrypoint.sh from the Docker .env. Managed keys (environment,\n"
+        . "# address, proxies, database) are re-applied on every start; edit the Docker .env\n"
         . "# instead. Other keys you add here are kept. Mount your own .env to opt out.\n");
 }
 $env = EnvFile::open($path);

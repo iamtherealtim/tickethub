@@ -1,0 +1,165 @@
+# TicketHub — the whole stack, HTTPS included.
+#
+# Two files: this one and a .env next to it (start from .env.example).
+#
+#   Dockge / Portainer / TrueNAS custom app: paste this file as the stack's
+#   compose file and .env.example as its .env, edit, deploy.
+#
+#   Command line:
+#     cp .env.example .env            # set DB_PASSWORD and TICKETHUB_DOMAIN
+#     docker compose up -d
+#     docker compose exec app php spark tickethub:setup --email you@company.com
+#
+# Then open https://<TICKETHUB_DOMAIN>/ — or http://localhost/ with no domain.
+# Change .env and run `docker compose up -d` again to apply it. Updating:
+# `docker compose pull && docker compose up -d` (or Dockge's Update button).
+# HTTPS options: https://github.com/iamtherealtim/tickethub/blob/main/docs/https.md
+#
+# caddy  the front door: ports 80 + 443 and the HTTPS certificates
+# app    Apache + PHP serving TicketHub; runs database migrations on start
+# db     MariaDB 11
+# cron   same image as app, runs the scheduled jobs
+#
+# Building from source instead of pulling (from a clone of the repository):
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build
+
+name: tickethub
+
+# Settings the app and scheduler both read. Values come from .env; anything
+# left empty falls back to the default described in .env.example.
+x-app-env: &app-env
+  CI_ENVIRONMENT: ${CI_ENVIRONMENT:-production}
+  TICKETHUB_DOMAIN: ${TICKETHUB_DOMAIN:-}
+  TICKETHUB_TLS: ${TICKETHUB_TLS:-}
+  TICKETHUB_DNS_PROVIDER: ${TICKETHUB_DNS_PROVIDER:-}
+  TICKETHUB_HTTP_BIND: ${TICKETHUB_HTTP_BIND:-80}
+  TICKETHUB_HTTPS_BIND: ${TICKETHUB_HTTPS_BIND:-443}
+  APP_BASE_URL: ${APP_BASE_URL:-}
+  APP_FORCE_HTTPS: ${APP_FORCE_HTTPS:-}
+  APP_PROXY_IPS: ${APP_PROXY_IPS:-}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+  DB_HOST: ${DB_HOST:-db}
+  DB_PORT: ${DB_PORT:-3306}
+  DB_NAME: ${DB_NAME:-tickethub}
+  DB_USER: ${DB_USER:-tickethub}
+  DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env (any long random string)}
+  CRON_INTERVAL_SECONDS: ${CRON_INTERVAL_SECONDS:-300}
+  CRON_DAILY_AT: ${CRON_DAILY_AT:-03}
+  TICKETHUB_ALLOW_DEMO_SEED: ${TICKETHUB_ALLOW_DEMO_SEED:-}
+
+services:
+  caddy:
+    image: ghcr.io/iamtherealtim/tickethub-caddy:${TICKETHUB_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      # "443" = every address on the host; "192.168.1.51:443" = only that one
+      # (e.g. an extra IP on a NAS whose own web UI already uses 80/443).
+      - "${TICKETHUB_HTTP_BIND:-80}:80"
+      - "${TICKETHUB_HTTPS_BIND:-443}:443"
+      - "${TICKETHUB_HTTPS_BIND:-443}:443/udp"   # HTTP/3
+    environment:
+      TICKETHUB_DOMAIN: ${TICKETHUB_DOMAIN:-}
+      TICKETHUB_TLS: ${TICKETHUB_TLS:-}
+      TICKETHUB_HTTPS_BIND: ${TICKETHUB_HTTPS_BIND:-443}
+      TICKETHUB_ACME_EMAIL: ${TICKETHUB_ACME_EMAIL:-}
+      TICKETHUB_DNS_PROVIDER: ${TICKETHUB_DNS_PROVIDER:-}
+      TICKETHUB_CERT_FILE: ${TICKETHUB_CERT_FILE:-}
+      TICKETHUB_KEY_FILE: ${TICKETHUB_KEY_FILE:-}
+      TICKETHUB_UPSTREAM_PROXIES: ${TICKETHUB_UPSTREAM_PROXIES:-}
+      CF_API_TOKEN: ${CF_API_TOKEN:-}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
+      AZURE_RESOURCE_GROUP_NAME: ${AZURE_RESOURCE_GROUP_NAME:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      # Certificates, ACME account and the internal CA. Keep this volume:
+      # losing it means re-issuing certificates (and a new internal root).
+      - caddy_data:/data
+      - caddy_config:/config
+      # TICKETHUB_TLS=files: put tls.crt + tls.key in ./certs next to this file.
+      - ./certs:/certs:ro
+
+  app:
+    image: ghcr.io/iamtherealtim/tickethub:${TICKETHUB_VERSION:-latest}
+    restart: unless-stopped
+    # No published ports: everything arrives through caddy, which is why the
+    # app trusts X-Forwarded-* from the private ranges (docker/env-sync.php).
+    expose:
+      - "80"
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Attachments, sessions, logs and the generated .env survive restarts.
+      - app_writable:/var/www/html/writable
+      # Read-only view of Caddy's data, so Admin → Address & HTTPS can offer the
+      # internal CA's root certificate for download (TICKETHUB_TLS=internal).
+      - caddy_data:/caddy-data:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-tickethub}
+      MARIADB_USER: ${DB_USER:-tickethub}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env (any long random string)}
+      # Nothing needs the root account; MariaDB picks one and prints it once.
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  cron:
+    image: ghcr.io/iamtherealtim/tickethub:${TICKETHUB_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      # The app container owns migrations; the scheduler only waits for the DB.
+      SKIP_MIGRATIONS: "1"
+    # The entrypoint runs as root (waits for the DB, links the shared .env),
+    # then the scheduler drops to www-data: it parses untrusted inbound mail
+    # and attachments, and files it writes to the shared volume must stay
+    # owned by the web user.
+    command: ["setpriv", "--reuid=www-data", "--regid=www-data", "--init-groups", "sh", "/var/www/html/docker/cron.sh"]
+    # Not the image's web healthcheck (no web server runs here): healthy while
+    # the loop keeps writing its log — every cycle logs at least one line.
+    healthcheck:
+      test: ["CMD-SHELL", "f=/var/www/html/writable/logs/cron.log; test -f $$f && test $$(( $$(date +%s) - $$(stat -c %Y $$f) )) -lt $$(( $${CRON_INTERVAL_SECONDS:-300} * 2 + 120 ))"]
+      interval: 60s
+      timeout: 5s
+      retries: 2
+      start_period: 30s
+    depends_on:
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    volumes:
+      - app_writable:/var/www/html/writable
+
+volumes:
+  db_data:
+  app_writable:
+  caddy_data:
+  caddy_config:

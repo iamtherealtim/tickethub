@@ -16,7 +16,7 @@ use Config\App;
  *   php spark tickethub:url https://helpdesk.example.com/
  *   php spark tickethub:url https://helpdesk.example.com/ --trust-proxy=10.0.0.5
  *
- * In Docker the address comes from .env.docker instead (TICKETHUB_DOMAIN),
+ * In Docker the address comes from the Docker .env instead (TICKETHUB_DOMAIN),
  * which the container applies on every start.
  */
 class SiteUrl extends BaseCommand
@@ -46,8 +46,8 @@ class SiteUrl extends BaseCommand
         }
 
         if (getenv('TICKETHUB_DOCKER') === '1' && is_link($envPath)) {
-            CLI::error('This install runs in Docker: the address comes from .env.docker and is re-applied on every start.');
-            CLI::write('Set TICKETHUB_DOMAIN=helpdesk.example.com (and TICKETHUB_TLS) in .env.docker on the host, then run: docker compose up -d', 'yellow');
+            CLI::error('This install runs in Docker: the address comes from the Docker .env and is re-applied on every start.');
+            CLI::write('Set TICKETHUB_DOMAIN=helpdesk.example.com (and TICKETHUB_TLS) in the Docker .env on the host, then run: docker compose up -d', 'yellow');
 
             return EXIT_ERROR;
         }
@@ -174,7 +174,7 @@ class SiteUrl extends BaseCommand
         CLI::write('Environment:      ' . ENVIRONMENT . ($plat['docker'] ? ' (Docker, TICKETHUB_TLS=' . ($plat['tls'] ?: 'auto') . ')' : ''));
         CLI::newLine();
         CLI::write($plat['docker']
-            ? 'To change it: edit TICKETHUB_DOMAIN in .env.docker on the host, then docker compose up -d'
+            ? 'To change it: edit TICKETHUB_DOMAIN in the Docker .env on the host, then docker compose up -d'
             : 'To change it: php spark tickethub:url https://helpdesk.example.com/', 'yellow');
 
         return EXIT_SUCCESS;

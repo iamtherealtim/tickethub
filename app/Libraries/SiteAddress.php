@@ -175,7 +175,7 @@ final class SiteAddress
         $prod    = $c['environment'] === 'production';
         $docker  = ! empty($c['platform']['docker']);
         $issues  = [];
-        $setWhere = $docker ? '.env.docker, then `docker compose up -d`' : 'the server shell, in the TicketHub folder';
+        $setWhere = $docker ? 'the Docker .env (next to compose.yaml), then `docker compose up -d`' : 'the server shell, in the TicketHub folder';
 
         // 1. Reached on a different address than the configured one.
         $reqAuthority = self::requestAuthority($r['host'], $r['secure']);
@@ -242,7 +242,7 @@ final class SiteAddress
                 'title'  => 'Development mode on a shared address',
                 'detail' => 'CI_ENVIRONMENT is "' . $c['environment'] . '": detailed error pages and the debug toolbar are on, HTTPS is not enforced and the demo seeder is allowed. Use production for anything other people reach.',
                 'fix'      => $docker ? 'CI_ENVIRONMENT=production' : 'CI_ENVIRONMENT = production',
-                'fixWhere' => $docker ? '.env.docker, then `docker compose up -d`' : '.env',
+                'fixWhere' => $docker ? 'the Docker .env (next to compose.yaml), then `docker compose up -d`' : '.env',
             ];
         }
 
@@ -271,7 +271,7 @@ final class SiteAddress
         if ($cert['validTo'] < $now) {
             $out[] = ['level' => 'error', 'title' => 'The certificate has expired', 'detail' => 'It expired on ' . gmdate('j M Y', $cert['validTo']) . '. Browsers now block the site. ' . ($auto ? 'Automatic renewal is failing — check `docker compose logs caddy`.' : 'Install a renewed certificate.')];
         } elseif ($days < 14 || (! $auto && $days < 30)) {
-            $out[] = ['level' => 'warning', 'title' => 'The certificate expires in ' . $days . ' day' . ($days === 1 ? '' : 's'), 'detail' => $auto ? 'It should have renewed by now; check `docker compose logs caddy` for renewal errors.' : 'Renew it before ' . gmdate('j M Y', $cert['validTo']) . ' and replace the files' . ($tlsMode === 'files' ? ' in docker/certs/, then `docker compose restart caddy`.' : '.')];
+            $out[] = ['level' => 'warning', 'title' => 'The certificate expires in ' . $days . ' day' . ($days === 1 ? '' : 's'), 'detail' => $auto ? 'It should have renewed by now; check `docker compose logs caddy` for renewal errors.' : 'Renew it before ' . gmdate('j M Y', $cert['validTo']) . ' and replace the files' . ($tlsMode === 'files' ? ' in the certs/ folder next to compose.yaml, then `docker compose restart caddy`.' : '.')];
         }
         if (! self::certCoversHost($cert['names'] ?? [], $host)) {
             $out[] = ['level' => 'error', 'title' => 'The certificate is not for ' . $host, 'detail' => 'It covers ' . (implode(', ', $cert['names'] ?? []) ?: 'no names') . '. Browsers show a security warning. Get a certificate that includes ' . $host . '.'];

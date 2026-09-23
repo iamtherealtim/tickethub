@@ -24,8 +24,9 @@ see a banner across the workspace until the problem is fixed.
 
 ## Docker
 
-Everything is set in `.env.docker`. Change it, then run `docker compose up -d`,
-and the new settings apply. The stack puts [Caddy](https://caddyserver.com), a
+Everything is set in the `.env` next to `compose.yaml` (in Dockge or
+Portainer, the stack's `.env` editor). Change it, then run
+`docker compose up -d` or redeploy, and the new settings apply. The stack puts [Caddy](https://caddyserver.com), a
 web server that handles certificates by itself, in front of TicketHub on ports
 80 and 443.
 
@@ -114,19 +115,25 @@ that with `TICKETHUB_UPSTREAM_PROXIES=10.0.0.5/32`.
 
 ### Ports 80 and 443 already in use
 
-Create a `docker-compose.override.yml`:
+There are two ways to fix this in `.env`:
 
-```yaml
-services:
-  caddy:
-    ports: !override
-      - "8443:443"
-      - "8080:80"
-```
-
-Then set the full address, including the port, in `.env.docker`:
-`APP_BASE_URL=https://helpdesk.example.com:8443/`. Let's Encrypt's `auto` mode
-needs the real ports 80 and 443, so use `dns`, `files` or `internal` here.
+- **Give TicketHub its own IP address (recommended).** Add a second IP to the
+  host (on TrueNAS: Network → Interfaces → your NIC → Aliases). Restrict the
+  other service to the first IP; on TrueNAS that's System → General → GUI →
+  Web Interface IPv4 Address. Then:
+  ```ini
+  TICKETHUB_HTTP_BIND=192.168.1.51:80
+  TICKETHUB_HTTPS_BIND=192.168.1.51:443
+  ```
+  Point the DNS name at `192.168.1.51`. Everything else stays standard.
+- **Use other ports:**
+  ```ini
+  TICKETHUB_HTTP_BIND=8080
+  TICKETHUB_HTTPS_BIND=8443
+  ```
+  The site address becomes `https://helpdesk.example.com:8443/` automatically,
+  and http:// requests redirect there. Let's Encrypt's `auto` mode needs the
+  real ports 80 and 443, so use `dns`, `files` or `internal` here.
 
 ---
 

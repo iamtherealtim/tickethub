@@ -4,8 +4,13 @@
 # get a publicly trusted certificate for a site that is not reachable from the
 # internet. Versions are pinned; bump them together and let CI's compose smoke
 # test validate every mode.
-FROM caddy:2.11.4-builder AS build
-RUN xcaddy build v2.11.4 \
+#
+# Go cross-compiles, so the builder runs natively and targets the requested
+# architecture (amd64/arm64) — no slow emulated compile.
+FROM --platform=$BUILDPLATFORM caddy:2.11.4-builder AS build
+ARG TARGETOS
+ARG TARGETARCH
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH xcaddy build v2.11.4 \
     --with github.com/caddy-dns/cloudflare@v0.2.4 \
     --with github.com/caddy-dns/azure@v0.6.0 \
     --with github.com/caddy-dns/route53@v1.6.2
