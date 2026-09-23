@@ -207,6 +207,10 @@ jobs:
           docker compose exec -T app php spark tickethub:url || true
           docker compose exec -T app sh -c 'ls -la .env writable/.env; grep -v password writable/.env'
           docker compose exec -T app sh -c 'env | grep -E "^(CI_|APP_|TICKETHUB_)" | sort'
+          echo "as www-data (what Apache sees):"
+          docker compose exec -T -u www-data app php -r 'var_dump(is_file(".env"), is_readable(".env"), is_readable("writable/.env"));' || true
+          docker compose exec -T -u www-data app php spark tickethub:url || true
+          docker compose exec -T app sh -c 'ls -ld writable writable/*; id www-data; ps -o user,group,comm -C apache2 | head -3' || true
           echo "::endgroup::"
           code=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' $R http://tickethub.test/login)
           echo "http  -> $code"; case "$code" in 30[178]\ https://tickethub.test/login) ;; *) echo "::error::http did not redirect to https"; exit 1;; esac
