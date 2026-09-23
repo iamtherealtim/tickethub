@@ -27,7 +27,7 @@ final class AuthTest extends FeatureTestCase
         $result = $this->postForm('login', ['email' => self::ADMIN_EMAIL, 'password' => self::DEMO_PASSWORD]);
 
         $result->assertRedirectTo('/app/dashboard');
-        $result->assertSessionHas('user_id', $this->userByEmail(self::ADMIN_EMAIL)['id']);
+        $result->assertSessionHas('user_id', (int) $this->userByEmail(self::ADMIN_EMAIL)['id']);
         $result->assertSessionHas('role', 'Administrator');
     }
 
@@ -67,7 +67,7 @@ final class AuthTest extends FeatureTestCase
 
     public function testLogoutViaGetOnlyShowsTheConfirmationPage(): void
     {
-        $session = $this->sessionFor($this->userByEmail(self::AGENT_EMAIL)['id']);
+        $session = $this->sessionFor((int) $this->userByEmail(self::AGENT_EMAIL)['id']);
 
         $result = $this->withSession($session)->get('logout');
 
@@ -78,7 +78,7 @@ final class AuthTest extends FeatureTestCase
 
     public function testLogoutRequiresPost(): void
     {
-        $session = $this->sessionFor($this->userByEmail(self::AGENT_EMAIL)['id']);
+        $session = $this->sessionFor((int) $this->userByEmail(self::AGENT_EMAIL)['id']);
 
         $result = $this->postForm('logout', [], $session);
 
@@ -142,7 +142,7 @@ final class AuthTest extends FeatureTestCase
         $result = $this->postForm('login', ['email' => self::ADMIN_EMAIL, 'password' => self::DEMO_PASSWORD]);
 
         $result->assertRedirectTo('/app/dashboard');
-        $result->assertSessionHas('user_id', $admin['id']);
+        $result->assertSessionHas('user_id', (int) $admin['id']);
     }
 
     /**
