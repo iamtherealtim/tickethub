@@ -15,15 +15,26 @@ runtime. Clone it, point a web server at `public/`, run two `spark` commands.
 
 ## Screenshots
 
-<!-- Screenshots live in docs/screenshots/ (see docs/screenshots/README.md). -->
-
 | Agent workspace | Ticket view |
 | --- | --- |
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Ticket](docs/screenshots/ticket.png) |
 
-| Self-service portal | Admin — SLA and business hours |
+| Self-service portal | Admin — SLA policies |
 | --- | --- |
 | ![Portal](docs/screenshots/portal.png) | ![Admin](docs/screenshots/admin-sla.png) |
+
+<details>
+<summary>Same four screens in dark mode</summary>
+
+| Agent workspace | Ticket view |
+| --- | --- |
+| ![Dashboard, dark mode](docs/screenshots/dashboard-dark.png) | ![Ticket, dark mode](docs/screenshots/ticket-dark.png) |
+
+| Self-service portal | Admin — SLA policies |
+| --- | --- |
+| ![Portal, dark mode](docs/screenshots/portal-dark.png) | ![Admin, dark mode](docs/screenshots/admin-sla-dark.png) |
+
+</details>
 
 ## Features
 
