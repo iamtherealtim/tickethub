@@ -1,7 +1,8 @@
 version: 2
 updates:
-  # Dev dependencies only (PHPUnit, php-cs-fixer, coding standard); the
-  # framework itself is vendored in system/ and upgraded by hand.
+  # Composer packages: dev tooling (PHPUnit, php-cs-fixer, coding standard)
+  # plus onelogin/php-saml. The framework itself is vendored in system/ and
+  # upgraded by hand.
   - package-ecosystem: composer
     directory: "/"
     schedule:
@@ -14,15 +15,35 @@ updates:
         dependency-type: development
         patterns: ["*"]
 
+  # Build-time only: Tailwind CSS. After merging, CI's "Built CSS is current"
+  # job shows whether the stylesheet needs a rebuild.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    labels: ["dependencies", "npm"]
+    groups:
+      tailwind:
+        patterns: ["tailwindcss", "@tailwindcss/*"]
+
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
       day: monday
     labels: ["dependencies", "github-actions"]
+    groups:
+      actions:
+        patterns: ["*"]
 
   - package-ecosystem: docker
     directory: "/"
     schedule:
       interval: monthly
     labels: ["dependencies", "docker"]
+    ignore:
+      # The PHP line the image ships (8.4) is a deliberate choice, tested in
+      # CI; move it by hand together with the CI matrix, not by bot.
+      - dependency-name: php
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
