@@ -11,8 +11,39 @@ $check = 'w-[15px] h-[15px] rounded border-line';
 $footer = 'flex items-center gap-2 px-4 py-3.5 border-t border-line bg-canvas rounded-b-xl';
 $primary = 'h-9 px-3.5 rounded-lg bg-brand hover:bg-brand-600 text-white text-[13px] font-semibold';
 $ghost = 'h-9 px-3.5 rounded-lg border border-line bg-white text-[13px] font-medium text-ink-500 hover:bg-canvas';
+$ssoPolicy = $settings['sso_required_roles'] ?? 'none';
+$anySsoOn = ($settings['azure_enabled'] ?? '0') === '1' || $oidcOn || $ldapOn || $samlOn;
 ?>
 <div class="space-y-4">
+
+  <!-- ============ Require single sign-on ============ -->
+  <form method="post" action="<?= site_url('app/admin/identity/sso-required') ?>">
+    <?= csrf_field() ?>
+    <section class="bg-white border border-line rounded-xl shadow-card">
+      <?= th_card_head('Require single sign-on', '<span class="' . ($ssoPolicy !== 'none' ? 'text-brand' : 'text-faint') . ' font-semibold">' . ($ssoPolicy === 'all' ? 'Required for everyone' : ($ssoPolicy === 'agents' ? 'Required for agents' : 'Optional'))  . '</span>') ?>
+      <div class="p-4 grid sm:grid-cols-2 gap-3.5">
+        <div>
+          <label class="<?= $lbl ?>">Who must sign in through SSO or the directory</label>
+          <select name="sso_required_roles" class="<?= $inputCls ?>">
+            <?php foreach (['none' => 'Optional — local passwords always work', 'agents' => 'Required for Agents and Supervisors', 'all' => 'Required for everyone, including requesters'] as $v => $l): ?>
+            <option value="<?= $v ?>" <?= $ssoPolicy === $v ? 'selected' : '' ?>><?= $l ?></option>
+            <?php endforeach ?>
+          </select>
+          <?php if ($ssoPolicy !== 'none' && ! $anySsoOn): ?>
+          <p class="text-[11.5px] text-alert mt-1 flex items-start gap-1.5"><?= th_icon('warn', 'w-3.5 h-3.5 mt-0.5') ?> No SSO method below is enabled yet — people in scope will not be able to sign in at all until you turn one on.</p>
+          <?php else: ?>
+          <p class="<?= $hint ?>">A correct local password stops working for accounts in scope; they use one of the buttons on the login page instead, or the directory when LDAP is on.</p>
+          <?php endif ?>
+        </div>
+        <div class="rounded-lg border border-line bg-canvas p-3 text-[12.5px] text-ink-500 leading-relaxed">
+          Administrators are always exempt, however this is set. That is deliberate: a broken or unreachable identity provider must never be able to lock every admin out of a self-hosted instance with no way back in.
+        </div>
+      </div>
+      <div class="<?= $footer ?>">
+        <button type="submit" class="<?= $primary ?>">Save policy</button>
+      </div>
+    </section>
+  </form>
 
   <!-- ============ Two-factor policy ============ -->
   <form method="post" action="<?= site_url('app/admin/identity/mfa') ?>">

@@ -351,6 +351,12 @@ class AuthController extends BaseController
 
             return redirect()->to('/login');
         }
+        if ($provider === 'local' && $this->localLoginBlocked($user)) {
+            Audit::log('login.sso_required', $email);
+            $this->session->setFlashdata('error', 'Your role requires single sign-on — use one of the buttons below instead of a password.');
+
+            return redirect()->to('/login');
+        }
 
         // Migrate the stored hash if the cost/algorithm default has moved on.
         if ($provider === 'local' && password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
@@ -360,6 +366,27 @@ class AuthController extends BaseController
         }
 
         return $this->beginLogin($user, (bool) $this->request->getPost('remember'), $provider);
+    }
+
+    /**
+     * The `sso_required_roles` policy (none | agents | all): true when this
+     * account must not be let in on a plain local password, even a correct
+     * one. Administrators are always exempt — a misconfigured or unreachable
+     * identity provider must never be able to lock every admin out of their
+     * own instance with no way back in. LDAP accounts are unaffected by
+     * this check entirely (attempt() only calls it for $provider === 'local').
+     */
+    private function localLoginBlocked(array $user): bool
+    {
+        if ($user['role'] === 'Administrator') {
+            return false;
+        }
+        $policy = Settings::get('sso_required_roles', 'none');
+        if ($policy === 'all') {
+            return true;
+        }
+
+        return $policy === 'agents' && in_array($user['role'], ['Supervisor', 'Agent'], true);
     }
 
     /* ---------- shared login completion + two-factor ---------- */

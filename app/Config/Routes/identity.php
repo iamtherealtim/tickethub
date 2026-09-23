@@ -35,6 +35,7 @@ $routes->group('', ['filter' => 'portalAuth'], static function ($routes) {
 // Admin → Identity tab (the GET is served by AdminController::index/identity as a plug-in tab).
 $routes->group('app', ['filter' => 'adminAuth'], static function ($routes) {
     $routes->post('admin/identity/mfa', 'Admin\IdentityController::saveMfa');
+    $routes->post('admin/identity/sso-required', 'Admin\IdentityController::saveSsoPolicy');
     $routes->post('admin/identity/users/(:num)/reset-2fa', 'Admin\IdentityController::resetTwoFactor/$1');
     $routes->post('admin/identity/oidc', 'Admin\IdentityController::saveOidc');
     $routes->post('admin/identity/oidc/test', 'Admin\IdentityController::testOidc');

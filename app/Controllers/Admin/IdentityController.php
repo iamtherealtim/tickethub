@@ -27,6 +27,26 @@ class IdentityController extends BaseController
         return redirect()->to(self::TAB);
     }
 
+    /**
+     * `sso_required_roles` (none | agents | all): blocks a plain local
+     * password for accounts in scope — they must use one of the configured
+     * SSO methods, or LDAP where that applies. Administrators are always
+     * exempt, whatever the policy says, so a broken IdP can never lock
+     * everyone out of their own instance; see AuthController::localLoginBlocked().
+     */
+    public function saveSsoPolicy()
+    {
+        $policy = (string) $this->request->getPost('sso_required_roles');
+        if (! in_array($policy, ['none', 'agents', 'all'], true)) {
+            $policy = 'none';
+        }
+        Settings::set('sso_required_roles', $policy);
+        Audit::log('settings.sso_required_policy', $policy);
+        $this->toast('Single sign-on policy saved');
+
+        return redirect()->to(self::TAB);
+    }
+
     public function resetTwoFactor(int $id)
     {
         $u = $this->db->table('users')->where('id', $id)->get()->getRowArray();
