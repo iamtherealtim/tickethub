@@ -74,6 +74,23 @@ Upgrade notes for operators live in [docs/UPGRADING.md](docs/UPGRADING.md).
 - **Docker ignored changes to `.env.docker` after the first boot.** The
   environment, address, proxies and database settings are now re-applied
   on every start. The encryption key and any keys you added by hand are kept.
+- **The Docker image did not actually work.** CI only ever built it; the new
+  stack test runs it, and that turned up three bugs:
+  - **Missing libraries:** the build removed the runtime libraries of the
+    intl, gd, ldap and zip extensions, so every request failed with
+    `Class "Locale" not found`. The build now keeps them, and fails if an
+    extension can't load.
+  - **Settings never reached the web server:** the base image's world-writable
+    document root made the kernel's symlink protection hide the generated
+    `.env` from Apache. Web requests ran without an address, database settings
+    or encryption key. The document root is now root-owned and not writable
+    by the PHP user, which the image already intended.
+  - **`cron` always reported unhealthy:** it inherited the web healthcheck. It
+    now checks that the scheduler loop is still running.
+- **Links carried `/index.php/`.** `app.indexPage` defaulted to `index.php`,
+  so on every install whose `.env` didn't override it, emailed links and SSO
+  callbacks looked like `https://host/index.php/auth/…`. Every supported
+  setup rewrites clean URLs, so it now defaults to empty.
 
 ### Security
 
