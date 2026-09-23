@@ -34,7 +34,15 @@ class InboundEmailController extends BaseController
             return $this->response->setStatusCode(401)->setJSON(['error' => 'bad secret']);
         }
 
-        $payload = $this->request->getJSON(true) ?? [];
+        try {
+            $payload = $this->request->getJSON(true) ?? [];
+        } catch (\Throwable $e) {
+            // Malformed JSON (or non-UTF-8 bytes in it) is the sender's error, not ours.
+            return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid JSON body']);
+        }
+        if (! is_array($payload)) {
+            return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid JSON body']);
+        }
 
         // Optional attachments: [{ "name": "log.txt", "content": "<base64>" }, ...]
         // Decoded and written only once intake has accepted the sender.

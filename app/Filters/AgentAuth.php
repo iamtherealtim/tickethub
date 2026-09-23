@@ -10,11 +10,11 @@ class AgentAuth implements FilterInterface
 {
     public function before(RequestInterface $request, $arguments = null)
     {
-        $session = session();
-        if (! $session->get('user_id')) {
+        $user = SessionUser::resolve();
+        if (! $user) {
             return redirect()->to('/login');
         }
-        if (! in_array($session->get('role'), ['Administrator', 'Supervisor', 'Agent'], true)) {
+        if (! in_array($user['role'], ['Administrator', 'Supervisor', 'Agent'], true)) {
             return redirect()->to('/portal');
         }
 

@@ -33,6 +33,7 @@ class Filters extends BaseFilters
         'sessionEpoch'  => \App\Filters\SessionEpoch::class,
         'locale'        => \App\Filters\Locale::class,
         'mfaRequired'   => \App\Filters\MfaRequired::class,
+        'appHeaders'    => \App\Filters\SecurityHeaders::class,
         'csrf'          => CSRF::class,
         'toolbar'       => DebugToolbar::class,
         'honeypot'      => Honeypot::class,
@@ -97,6 +98,8 @@ class Filters extends BaseFilters
         'after' => [
             // 'honeypot',
             'secureheaders',
+            // CSP, HSTS (production + HTTPS), Permissions-Policy — see App\Filters\SecurityHeaders.
+            'appHeaders',
         ],
     ];
 

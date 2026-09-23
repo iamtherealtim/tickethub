@@ -44,4 +44,5 @@ $routes->group('portal', ['filter' => 'portalAuth'], static function ($routes) {
 
 // CSAT from the resolution email: token-authenticated, no sign-in needed.
 $routes->get('portal/rate/(:segment)/(:num)', 'PortalController::rateByToken/$1/$2');
+$routes->post('portal/rate/(:segment)/submit', 'PortalController::rateSubmit/$1');
 $routes->post('portal/rate/(:segment)', 'PortalController::rateComment/$1');

@@ -282,15 +282,21 @@ class AdminController extends BaseController
 
             return redirect()->to('/app/admin/people');
         }
+        // Credentials and account-security state never leave the system, not
+        // even to the person themselves in an export file.
         $profile = $u;
-        foreach (['password_hash', 'remember_selector', 'remember_validator', 'remember_expires', 'session_epoch', 'totp_secret', 'totp_enabled', 'must_change_password'] as $k) {
+        foreach (['password_hash', 'remember_selector', 'remember_validator', 'remember_expires', 'session_epoch',
+            'totp_secret', 'totp_recovery', 'totp_enabled_at', 'totp_last_step', 'azure_oid', 'sso_subject',
+            'must_change_password'] as $k) {
             unset($profile[$k]);
         }
 
         $tickets = [];
         foreach ($this->db->table('tickets')->where('requester_id', $id)->orderBy('id')->get()->getResultArray() as $t) {
             $messages = [];
-            foreach ($this->db->table('ticket_messages')->where('ticket_id', $t['id'])->orderBy('id')->get()->getResultArray() as $m) {
+            // Internal notes are staff working material (and often about other
+            // people); the export carries what the person could already see.
+            foreach ($this->db->table('ticket_messages')->where('ticket_id', $t['id'])->where('kind !=', 'note')->orderBy('id')->get()->getResultArray() as $m) {
                 $messages[] = [
                     'kind' => $m['kind'], 'user_id' => $m['user_id'] ? (int) $m['user_id'] : null,
                     'body' => $m['body'], 'created_at' => $m['created_at'],
@@ -352,7 +358,8 @@ class AdminController extends BaseController
             'remember_selector' => null, 'remember_validator' => null, 'remember_expires' => null,
             'active' => 0, 'updated_at' => date('Y-m-d H:i:s'),
         ];
-        foreach (['totp_secret' => null, 'totp_enabled' => 0, 'azure_oid' => null, 'org_id' => null] as $col => $val) {
+        foreach (['totp_secret' => null, 'totp_enabled_at' => null, 'totp_recovery' => null, 'totp_last_step' => null,
+            'azure_oid' => null, 'sso_subject' => null, 'org_id' => null] as $col => $val) {
             if ($this->db->fieldExists($col, 'users')) {
                 $upd[$col] = $val;
             }
@@ -360,9 +367,25 @@ class AdminController extends BaseController
         if ($this->db->fieldExists('session_epoch', 'users')) {
             $upd['session_epoch'] = (int) ($u['session_epoch'] ?? 0) + 1;
         }
+        $placeholder = 'deleted-' . $id . '@invalid';
         $this->db->table('users')->where('id', $id)->update($upd);
         $this->db->table('api_tokens')->where('user_id', $id)->where('revoked_at', null)->update(['revoked_at' => date('Y-m-d H:i:s')]);
-        Audit::log('admin.person_anonymized', 'user #' . $id . ' (was ' . $u['email'] . ')');
+        // Other places the address or name sits verbatim.
+        $this->db->table('password_resets')->where('email', $u['email'])->delete();
+        if ($this->db->tableExists('notifications')) {
+            $this->db->table('notifications')->where('user_id', $id)->delete();
+        }
+        foreach ([['audit_log', 'detail'], ['webhook_deliveries', 'payload']] as [$table, $col]) {
+            if ($this->db->tableExists($table) && $this->db->fieldExists($col, $table)) {
+                $this->db->query("UPDATE `$table` SET `$col` = REPLACE(REPLACE(`$col`, ?, ?), ?, ?) WHERE `$col` LIKE ? OR `$col` LIKE ?", [
+                    $u['email'], $placeholder, $u['name'], 'Deleted user ' . $id,
+                    '%' . $this->db->escapeLikeString($u['email']) . '%', '%' . $this->db->escapeLikeString($u['name']) . '%',
+                ]);
+            }
+        }
+        // Free text people typed into ticket subjects and messages (signatures,
+        // "hi, this is …") cannot be scrubbed reliably by pattern and is kept.
+        Audit::log('admin.person_anonymized', 'user #' . $id);
         $this->toast('Account anonymized — tickets are kept under "Deleted user ' . $id . '"', 'warn');
 
         return redirect()->to('/app/admin/people');
@@ -981,9 +1004,10 @@ class AdminController extends BaseController
     {
         $p = $this->request->getPost();
         $tenant = strtolower(trim((string) ($p['azure_tenant_id'] ?? '')));
-        if ($tenant !== '' && ! in_array($tenant, ['common', 'organizations'], true)
-            && ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $tenant)) {
-            $this->toast('Tenant must be a directory GUID, "common" or "organizations"', 'warn');
+        // GUID only: "common"/"organizations" would let any Entra tenant assert
+        // one of our users' email addresses (see AuthController::azureTenant).
+        if ($tenant !== '' && ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $tenant)) {
+            $this->toast('Tenant must be your directory (tenant) ID — a GUID. Multi-tenant "common"/"organizations" is not supported.', 'warn');
 
             return redirect()->to('/app/admin/sso');
         }

@@ -118,9 +118,28 @@ class Saml
     }
 
     /** The URL to send the browser to at the IdP. Never redirects itself. */
+    /**
+     * Start an SP-initiated sign-in. Returns the IdP URL and a random nonce
+     * that travels as RelayState and maps, server-side, to the AuthnRequest
+     * ID we just issued (see processAcs). The caller also drops the nonce in
+     * a cookie so the response can be tied to the browser that started it.
+     *
+     * @return array{url: string, nonce: string}
+     */
+    public static function beginLogin(): array
+    {
+        $nonce = bin2hex(random_bytes(16));
+        $auth  = self::auth();
+        $url   = $auth->login($nonce, [], false, false, true);
+        cache()->save('saml_rs_' . $nonce, (string) $auth->getLastRequestID(), 900);
+
+        return ['url' => $url, 'nonce' => $nonce];
+    }
+
+    /** Back-compat for callers that only want the URL. */
     public static function loginUrl(): string
     {
-        return self::auth()->login(null, [], false, false, true);
+        return self::beginLogin()['url'];
     }
 
     /**
@@ -148,6 +167,10 @@ class Saml
         if (! preg_match('#^https://#i', trim($url))) {
             throw new \RuntimeException('the metadata URL must be https://.');
         }
+        helper('tickethub');
+        if ($err = th_outbound_url_error($url)) {
+            throw new \RuntimeException('the metadata URL was refused: ' . $err);
+        }
         $info = \OneLogin\Saml2\IdPMetadataParser::parseRemoteXML(
             $url,
             null,
@@ -171,16 +194,37 @@ class Saml
      *
      * @throws \RuntimeException with a message safe to show the user.
      */
-    public static function processAcs(): array
+    public static function processAcs(?string $cookieNonce = null, bool $secure = false): array
     {
         if (empty($_POST['SAMLResponse'])) {
             throw new \RuntimeException('no SAML response was posted — start from the sign-in page.');
         }
 
+        // Which sign-in is this the answer to? The RelayState nonce is single
+        // use and maps to the AuthnRequest ID we issued; passing that ID makes
+        // the toolkit enforce InResponseTo, so a response we never asked for
+        // (or one issued to someone else's sign-in) is refused.
+        $relay     = (string) ($_POST['RelayState'] ?? '');
+        $requestId = null;
+        if (preg_match('/^[a-f0-9]{32}$/', $relay)) {
+            $requestId = cache('saml_rs_' . $relay) ?: null;
+            cache()->delete('saml_rs_' . $relay);
+        }
+        if ($requestId !== null) {
+            // On HTTPS the flow is also bound to the browser that started it,
+            // which stops someone posting their own valid response into a
+            // victim's browser to sign them in as the attacker.
+            if ($secure && ! hash_equals($relay, (string) $cookieNonce)) {
+                throw new \RuntimeException('this sign-in was started in a different browser. Start again from the sign-in page.');
+            }
+        } elseif (Settings::get('saml_allow_idp_initiated') !== '1') {
+            throw new \RuntimeException('sign-in must start from this site. Use the SSO button on the sign-in page.');
+        }
+
         $auth = self::auth();
 
         try {
-            $auth->processResponse();
+            $auth->processResponse($requestId);
         } catch (\Throwable $e) {
             log_message('error', 'SAML response could not be processed: {msg}', ['msg' => $e->getMessage()]);
 
@@ -199,6 +243,19 @@ class Saml
         }
         if (! $auth->isAuthenticated()) {
             throw new \RuntimeException('the identity provider did not confirm sign-in.');
+        }
+        // Replay cache: each signed assertion signs someone in once. Kept until
+        // the assertion itself would have expired anyway.
+        $assertionId = (string) $auth->getLastAssertionId();
+        if ($assertionId !== '') {
+            $key = 'saml_aid_' . hash('sha256', $assertionId);
+            if (cache($key)) {
+                log_message('warning', 'SAML assertion {id} replayed; refused.', ['id' => $assertionId]);
+
+                throw new \RuntimeException('that sign-in response was already used. Start again from the sign-in page.');
+            }
+            $until = (int) ($auth->getLastAssertionNotOnOrAfter() ?: time() + 300);
+            cache()->save($key, 1, max(60, $until - time() + 60));
         }
 
         $nameId = (string) $auth->getNameId();

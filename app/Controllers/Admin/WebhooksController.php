@@ -48,7 +48,8 @@ class WebhooksController extends BaseController
         }
         $secret = bin2hex(random_bytes(24));
         $this->db->table('webhook_endpoints')->insert($data + [
-            'secret' => $secret, 'active' => 1, 'failures' => 0, 'created_at' => date('Y-m-d H:i:s'),
+            'secret' => \App\Libraries\Settings::encryptValue($secret, 'webhook secret'),
+            'active' => 1, 'failures' => 0, 'created_at' => date('Y-m-d H:i:s'),
         ]);
         Audit::log('admin.webhook_added', $data['name'] . ' → ' . $data['url']);
         // Shown once, like API tokens: the signing secret is what the receiver verifies with.
@@ -70,14 +71,26 @@ class WebhooksController extends BaseController
             return redirect()->to('/app/admin/webhooks');
         }
         if ($this->request->getPost('rotate_secret')) {
-            $data['secret'] = bin2hex(random_bytes(24));
-            $this->session->setFlashdata('new_webhook_secret', $data['secret']);
+            $plain          = bin2hex(random_bytes(24));
+            $data['secret'] = \App\Libraries\Settings::encryptValue($plain, 'webhook secret');
+            $this->session->setFlashdata('new_webhook_secret', $plain);
         }
         // Editing is an explicit "try again" — clear the failure streak.
         $data['failures'] = 0;
         $this->db->table('webhook_endpoints')->where('id', $id)->update($data);
         Audit::log('admin.webhook_updated', $data['name']);
         $this->toast($data['name'] . ' updated' . (isset($data['secret']) ? ' — new signing secret below' : ''));
+
+        return redirect()->to('/app/admin/webhooks');
+    }
+
+    /** outbound_allow_private: whether integrations may call private-network addresses (see th_outbound_resolve). */
+    public function savePolicy()
+    {
+        $on = $this->request->getPost('outbound_allow_private') ? '1' : '0';
+        \App\Libraries\Settings::set('outbound_allow_private', $on);
+        Audit::log('admin.outbound_private_' . ($on === '1' ? 'allowed' : 'blocked'));
+        $this->toast($on === '1' ? 'Integrations may now reach private networks' : 'Integrations are limited to public addresses');
 
         return redirect()->to('/app/admin/webhooks');
     }

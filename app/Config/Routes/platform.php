@@ -55,6 +55,7 @@ $routes->group('app', ['filter' => 'adminAuth'], static function ($routes) {
     $routes->post('admin/orgs/(:num)/delete', 'Admin\OrgsController::delete/$1');
 
     $routes->post('admin/webhooks', 'Admin\WebhooksController::create');
+    $routes->post('admin/webhooks/outbound-policy', 'Admin\WebhooksController::savePolicy');
     $routes->post('admin/webhooks/(:num)', 'Admin\WebhooksController::update/$1');
     $routes->post('admin/webhooks/(:num)/delete', 'Admin\WebhooksController::delete/$1');
     $routes->post('admin/webhooks/(:num)/toggle', 'Admin\WebhooksController::toggle/$1');

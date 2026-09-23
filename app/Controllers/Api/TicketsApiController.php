@@ -96,6 +96,11 @@ class TicketsApiController extends ApiController
         if ($groupId !== null && ! $this->db->table('groups')->where('id', $groupId)->countAllResults()) {
             return $this->fail('group_id does not match a group', 422);
         }
+        // Same rule as the New ticket form: an agent may only file into a
+        // group they can use; leave it empty to let routing decide.
+        if ($groupId !== null && ! $this->canUseGroup($groupId)) {
+            return $this->fail('You cannot file a ticket into that group', 403);
+        }
 
         $t = $this->createTicket([
             'subject'      => mb_substr((string) $in['subject'], 0, 250),
@@ -153,6 +158,9 @@ class TicketsApiController extends ApiController
                 case 'status':
                     if (! isset(TH_STATUS[$value])) {
                         return $this->fail('status must be one of ' . implode(', ', array_keys(TH_STATUS)), 422);
+                    }
+                    if ($value !== $t['status'] && $this->approvalBlocksStatus((int) $t['id'], $value)) {
+                        return $this->fail('This request is still waiting on an approval; approve or reject it first', 409);
                     }
                     if ($value !== $t['status']) {
                         $upd['status'] = $value;
@@ -347,7 +355,14 @@ class TicketsApiController extends ApiController
             'author'     => $m['user_id'] ? ($users[(int) $m['user_id']]['name'] ?? null) : null,
             'user_id'    => $m['user_id'] ? (int) $m['user_id'] : null,
             'body'       => $m['body'],
-            'attachments' => array_map(static fn ($a) => ['name' => $a['n'] ?? '', 'bytes' => (int) ($a['s'] ?? 0), 'url' => isset($a['f']) ? site_url('files/' . $a['f']) : null], json_decode($m['attachments'] ?? '[]', true) ?: []),
+            // Pasted inline images are parked on the first message for storage
+            // only; they are reachable through the message body that embeds
+            // them, never listed here (that listing used to leak images pasted
+            // into private notes to requester tokens).
+            'attachments' => array_values(array_map(
+                static fn ($a) => ['name' => $a['n'] ?? '', 'bytes' => (int) ($a['s'] ?? 0), 'url' => isset($a['f']) ? site_url('files/' . $a['f']) : null],
+                array_filter(json_decode($m['attachments'] ?? '[]', true) ?: [], static fn ($a) => empty($a['inline']))
+            )),
             'created_at' => $m['created_at'],
         ], array_filter($rows, fn ($m) => $m['kind'] !== 'note' || $this->isAgent())));
     }

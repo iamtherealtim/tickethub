@@ -86,6 +86,17 @@ if (! $dRows) {
     $dRows = th_empty('send', 'Nothing delivered yet', 'Deliveries appear here as tickets change — or use "Send test".');
 }
 echo '<div class="mt-3">' . th_card(th_card_head('Recent deliveries', '<span class="text-muted">Latest 40</span>') . $dRows) . '</div>';
+
+$allowPrivate = (\App\Libraries\Settings::get('outbound_allow_private') === '1');
+echo '<form method="post" action="' . site_url('app/admin/webhooks/outbound-policy') . '" class="mt-3">' . csrf_field()
+    . th_card('<div class="flex flex-wrap items-center gap-3 p-4">'
+        . '<span class="w-8 h-8 rounded-lg bg-canvas border border-line grid place-items-center text-muted">' . th_icon('shield', 'w-4 h-4') . '</span>'
+        . '<div class="flex-1 min-w-[260px]"><div class="text-[13px] font-medium text-ink">Allow integrations to reach private networks</div>'
+        . '<div class="text-[12px] text-muted">Off by default: webhooks, automation webhooks and PDQ may only call public internet addresses. Turn on only if a target lives on your internal network. Loopback and cloud-metadata addresses stay blocked either way.</div></div>'
+        . '<label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="outbound_allow_private" value="1" ' . ($allowPrivate ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line"> Allow</label>'
+        . '<button type="submit" class="h-8 px-3 rounded-lg bg-brand hover:bg-brand-600 text-white text-[12.5px] font-semibold">Save</button>'
+        . '</div>')
+    . '</form>';
 ?>
 
 <template id="tpl-addWebhook">

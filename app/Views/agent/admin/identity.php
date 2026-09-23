@@ -144,6 +144,17 @@ $anySsoOn = ($settings['azure_enabled'] ?? '0') === '1' || $oidcOn || $ldapOn ||
         </div>
         <p class="sm:col-span-2 <?= $hint ?> !mt-0">A claim can be a list (<code class="font-mono">groups</code>) or a single value (<code class="font-mono">hd</code> = <code class="font-mono">example.com</code> for Google). With either mapping set, everyone else becomes a Requester on their next sign-in; Supervisors and the last Administrator are never demoted. Leave both blank to keep roles as set under Agents &amp; roles.</p>
 
+        <div class="sm:col-span-2">
+          <label class="<?= $lbl ?>">Allowed email domains</label>
+          <input name="oidc_allowed_domains" value="<?= $s('oidc_allowed_domains') ?>" placeholder="example.com" class="<?= $inputCls ?> font-mono text-[12px]">
+          <?php $publicIssuer = str_contains(strtolower($settings['oidc_issuer'] ?? ''), 'accounts.google.com'); ?>
+          <?php if ($publicIssuer && trim($settings['oidc_allowed_domains'] ?? '') === ''): ?>
+          <p class="text-[11.5px] text-alert mt-1">With Google as the issuer and no domain here, any Google account in the world can create a portal account. Enter your Workspace domain.</p>
+          <?php else: ?>
+          <p class="<?= $hint ?>">Only these domains may sign in through OIDC. Existing accounts are linked only when the provider confirms the email (<code class="font-mono">email_verified</code>), and each is bound to its <code class="font-mono">sub</code> on first sign-in.</p>
+          <?php endif ?>
+        </div>
+
         <div class="sm:col-span-2 rounded-lg border border-line bg-canvas p-3">
           <div class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint mb-1.5">Provider setup</div>
           <ol class="text-[12.5px] text-ink-500 leading-relaxed list-decimal ml-4 space-y-1">
@@ -234,6 +245,17 @@ $anySsoOn = ($settings['azure_enabled'] ?? '0') === '1' || $oidcOn || $ldapOn ||
           <div><label class="<?= $lbl ?>">contains value</label><input name="saml_admin_value" value="<?= $s('saml_admin_value') ?>" placeholder="it-admins" class="<?= $inputCls ?> font-mono text-[12px]"></div>
         </div>
         <p class="sm:col-span-2 <?= $hint ?> !mt-0">With either mapping set, everyone else becomes a Requester on their next sign-in; Supervisors and the last Administrator are never demoted. Leave both blank to keep roles as set under Agents &amp; roles.</p>
+
+        <div class="sm:col-span-2">
+          <label class="<?= $lbl ?>">Allowed email domains (optional)</label>
+          <input name="saml_allowed_domains" value="<?= $s('saml_allowed_domains') ?>" placeholder="example.com, example.co.uk" class="<?= $inputCls ?> font-mono text-[12px]">
+          <p class="<?= $hint ?>">When set, only these domains may sign in through SAML. Each account is bound to its identity-provider subject on first sign-in; a different subject claiming the same email is refused.</p>
+        </div>
+        <label class="sm:col-span-2 flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">
+          <input type="checkbox" name="saml_allow_idp_initiated" value="1" <?= ($settings['saml_allow_idp_initiated'] ?? '0') === '1' ? 'checked' : '' ?> class="<?= $check ?>">
+          <span class="text-[13px] font-medium text-ink">Allow sign-in started from the identity provider's app dashboard</span>
+          <span class="text-[12px] text-muted">— off by default: unsolicited responses are refused, which blocks forced-login and replay tricks. Turn on only if people launch TicketHub from an IdP tile.</span>
+        </label>
 
         <div class="sm:col-span-2 rounded-lg border border-line bg-canvas p-3">
           <div class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint mb-1.5">Provider setup</div>

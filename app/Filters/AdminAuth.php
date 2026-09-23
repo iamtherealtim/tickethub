@@ -10,14 +10,14 @@ class AdminAuth implements FilterInterface
 {
     public function before(RequestInterface $request, $arguments = null)
     {
-        $session = session();
-        if (! $session->get('user_id')) {
+        $user = SessionUser::resolve();
+        if (! $user) {
             return redirect()->to('/login');
         }
-        if ($session->get('role') !== 'Administrator') {
-            $session->setFlashdata('toast', ['msg' => 'Admin is restricted to administrators', 'kind' => 'warn']);
+        if ($user['role'] !== 'Administrator') {
+            session()->setFlashdata('toast', ['msg' => 'Admin is restricted to administrators', 'kind' => 'warn']);
 
-            return redirect()->to(in_array($session->get('role'), ['Supervisor', 'Agent'], true) ? '/app/dashboard' : '/portal');
+            return redirect()->to(in_array($user['role'], ['Supervisor', 'Agent'], true) ? '/app/dashboard' : '/portal');
         }
 
         return null;

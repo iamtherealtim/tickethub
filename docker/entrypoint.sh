@@ -53,8 +53,21 @@ wait_for_db() {
 
 # ------------------------------------------------------------------ write .env
 write_env() {
-    if [ -f .env ]; then
+    # A real .env mounted by the operator always wins.
+    if [ -f .env ] && [ ! -L .env ]; then
         log ".env already present — leaving it alone"
+        return
+    fi
+
+    # Otherwise the generated file lives on the shared app_writable volume, so
+    # it survives container re-creation and the app and cron containers read
+    # the SAME file. (Previously each container generated its own, so an
+    # unset ENCRYPTION_KEY gave them different keys and cron could not decrypt
+    # secrets the app had saved; a re-created container lost its key too.)
+    SHARED_ENV=writable/.env
+    if [ -f "$SHARED_ENV" ]; then
+        ln -sf "$SHARED_ENV" .env
+        log "using the shared $SHARED_ENV"
         return
     fi
 
@@ -91,9 +104,11 @@ write_env() {
         echo "database.default.DBCollat = utf8mb4_unicode_ci"
         echo ""
         echo "encryption.key = ${ENCRYPTION_KEY}"
-    } > .env
-    chown www-data:www-data .env
-    chmod 640 .env
+    } > "$SHARED_ENV"
+    # Readable by PHP, writable only by root.
+    chown root:www-data "$SHARED_ENV"
+    chmod 640 "$SHARED_ENV"
+    ln -sf "$SHARED_ENV" .env
 }
 
 # ------------------------------------------------------------------ migrations
@@ -113,6 +128,11 @@ migrate
 # writable/ may be a fresh named volume: make sure the runtime dirs exist.
 mkdir -p writable/cache writable/logs writable/session writable/uploads writable/debugbar
 chown -R www-data:www-data writable
+# ...except the shared config, which PHP may read but never rewrite.
+if [ -f writable/.env ]; then
+    chown root:www-data writable/.env
+    chmod 640 writable/.env
+fi
 
 log "starting: $*"
 exec "$@"

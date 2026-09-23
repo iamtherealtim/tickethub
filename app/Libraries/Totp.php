@@ -93,6 +93,29 @@ class Totp
         return $ok;
     }
 
+    /**
+     * Like verify(), but returns the time step that matched (or null). Sign-in
+     * stores it and refuses any step at or below the last one used, so an
+     * observed code cannot be replayed inside its ±WINDOW validity period.
+     */
+    public static function verifyStep(string $secret, string $code, ?int $time = null): ?int
+    {
+        $code = preg_replace('/\s+/', '', $code) ?? '';
+        if (! preg_match('/^\d{' . self::DIGITS . '}$/', $code) || $secret === '') {
+            return null;
+        }
+        $now     = $time ?? time();
+        $matched = null;
+        for ($i = -self::WINDOW; $i <= self::WINDOW; $i++) {
+            $t = $now + $i * self::PERIOD;
+            if (hash_equals(self::code($secret, $t), $code)) {
+                $matched = intdiv($t, self::PERIOD);
+            }
+        }
+
+        return $matched;
+    }
+
     /** otpauth:// URI for QR enrolment in Google Authenticator, Authy, 1Password etc. */
     public static function uri(string $secret, string $account, string $issuer = 'TicketHub'): string
     {
@@ -108,13 +131,17 @@ class Totp
 
     /* ---------- recovery codes ---------- */
 
-    /** Ten fresh plain codes (xxxx-xxxx) — show once, store hashed with hashRecovery(). */
+    /**
+     * Ten fresh plain codes (xxxxx-xxxxx-xxxxx-xxxxx, 80 bits each) — show
+     * once, store hashed with hashRecovery(). 80 bits is what makes the
+     * unsalted SHA-256 storage safe: a leaked database copy cannot be
+     * brute-forced back to usable codes the way 32-bit codes could.
+     */
     public static function generateRecoveryCodes(int $count = 10): array
     {
         $codes = [];
         for ($i = 0; $i < $count; $i++) {
-            $raw     = strtolower(bin2hex(random_bytes(4)));
-            $codes[] = substr($raw, 0, 4) . '-' . substr($raw, 4, 4);
+            $codes[] = implode('-', str_split(strtolower(bin2hex(random_bytes(10))), 5));
         }
 
         return $codes;

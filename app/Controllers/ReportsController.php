@@ -75,7 +75,8 @@ class ReportsController extends BaseController
         return array_map(static function ($v) {
             $s = (string) $v;
             // A lone "-" is our own "no value" marker and cannot be a formula.
-            if ($s !== '' && $s !== '-' && in_array($s[0], ['=', '+', '-', '@'], true) && ! is_numeric($s)) {
+            // Tab and carriage return also start a formula in some spreadsheets.
+            if ($s !== '' && $s !== '-' && in_array($s[0], ['=', '+', '-', '@', "\t", "\r"], true) && ! is_numeric($s)) {
                 return "'" . $s;
             }
 

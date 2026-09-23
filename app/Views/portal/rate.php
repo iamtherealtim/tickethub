@@ -50,13 +50,15 @@ $stars = static function (int $n, string $active = 'text-signal-400') {
         <div class="font-mono text-[12px] text-faint"><?= esc($t['code']) ?></div>
         <h1 class="font-display text-[20px] font-semibold mt-1">How did we do?</h1>
         <p class="text-[13.5px] text-muted mt-1"><?= esc($t['subject']) ?></p>
-        <div class="flex gap-2 mt-5">
+        <?php $pre = (int) ($preselect ?? 0); ?>
+        <form method="post" action="<?= site_url('portal/rate/' . $token . '/submit') ?>" class="flex gap-2 mt-5">
+          <?= csrf_field() ?>
           <?php foreach ([1 => 'Poor', 2 => 'Fair', 3 => 'OK', 4 => 'Good', 5 => 'Excellent'] as $n => $label): ?>
-          <a href="<?= site_url('portal/rate/' . $token . '/' . $n) ?>" class="flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl border border-line hover:border-signal-100 hover:bg-signal-50 text-line hover:text-signal-400 transition" aria-label="<?= $n ?> out of 5">
-            <?= th_icon('star', 'w-6 h-6 fill-current') ?><span class="text-[11.5px] text-muted"><?= $label ?></span></a>
+          <button type="submit" name="score" value="<?= $n ?>" class="flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl border transition <?= $pre === $n ? 'border-signal-100 bg-signal-50 text-signal-400' : 'border-line text-line hover:border-signal-100 hover:bg-signal-50 hover:text-signal-400' ?>" aria-label="<?= $n ?> out of 5">
+            <?= th_icon('star', 'w-6 h-6 fill-current') ?><span class="text-[11.5px] text-muted"><?= $label ?></span></button>
           <?php endforeach ?>
-        </div>
-        <p class="text-[12px] text-faint mt-4">One tap records your score. No sign-in needed.</p>
+        </form>
+        <p class="text-[12px] text-faint mt-4"><?= $pre ? 'Confirm your score — tap it again (or pick another).' : 'One tap records your score.' ?> No sign-in needed.</p>
       </div>
 
       <?php else: // thanks | rated | commented ?>

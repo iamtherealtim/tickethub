@@ -88,22 +88,38 @@ class Settings
 
     private static function encode(string $key, string $value): string
     {
-        if ($value === '' || ! in_array($key, self::SENSITIVE_KEYS, true) || ! self::encryptionAvailable()) {
+        return in_array($key, self::SENSITIVE_KEYS, true) ? self::encryptValue($value, $key) : $value;
+    }
+
+    private static function decode(string $key, string $value): string
+    {
+        return in_array($key, self::SENSITIVE_KEYS, true) ? self::decryptValue($value, $key) : $value;
+    }
+
+    /**
+     * Encrypt a secret for storage anywhere (settings rows, webhook
+     * endpoints, …) as "enc:<base64>", or return it unchanged when no
+     * encryption.key is configured.
+     */
+    public static function encryptValue(string $value, string $label = 'value'): string
+    {
+        if ($value === '' || ! self::encryptionAvailable()) {
             return $value;
         }
 
         try {
             return self::ENC_PREFIX . base64_encode(service('encrypter')->encrypt($value));
         } catch (\Throwable $e) {
-            log_message('error', 'Settings: could not encrypt {key}: {msg}', ['key' => $key, 'msg' => $e->getMessage()]);
+            log_message('error', 'Settings: could not encrypt {key}: {msg}', ['key' => $label, 'msg' => $e->getMessage()]);
 
             return $value;
         }
     }
 
-    private static function decode(string $key, string $value): string
+    /** Inverse of encryptValue(); plaintext (stored before a key existed) passes through. */
+    public static function decryptValue(string $value, string $label = 'value'): string
     {
-        if (! in_array($key, self::SENSITIVE_KEYS, true) || ! str_starts_with($value, self::ENC_PREFIX)) {
+        if (! str_starts_with($value, self::ENC_PREFIX)) {
             return $value;
         }
         $raw = base64_decode(substr($value, strlen(self::ENC_PREFIX)), true);
@@ -115,7 +131,7 @@ class Settings
             return (string) service('encrypter')->decrypt($raw);
         } catch (\Throwable $e) {
             // Key missing or rotated: hand back what is stored so nothing 500s.
-            log_message('error', 'Settings: could not decrypt {key}: {msg}', ['key' => $key, 'msg' => $e->getMessage()]);
+            log_message('error', 'Settings: could not decrypt {key}: {msg}', ['key' => $label, 'msg' => $e->getMessage()]);
 
             return $value;
         }

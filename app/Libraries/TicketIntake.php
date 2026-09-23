@@ -664,14 +664,63 @@ class TicketIntake
         return null;
     }
 
+    /**
+     * Did the receiving mail system verify that this message really comes
+     * from the address in its From header? The From header alone proves
+     * nothing — anyone can type an agent's address into it — so staff
+     * privileges by email (replying as the agent, #note, auto-assign) are only
+     * granted when this is true.
+     *
+     * Accepted evidence, from the topmost Authentication-Results header (the
+     * one our own receiving server added):
+     *   - dmarc=pass, or compauth=pass (Exchange Online's composite verdict), or
+     *   - dkim=pass with a signing domain (header.d) aligned to the From domain.
+     * For mail polled through Graph, internal Microsoft 365 mail carries
+     * "X-MS-Exchange-Organization-AuthAs: Internal" instead, which Exchange
+     * strips from anything arriving from outside the organisation.
+     * No evidence at all counts as unverified: fail closed.
+     */
+    private static function senderAuthenticated(string $from, array $headers, string $source = ''): bool
+    {
+        $h = [];
+        foreach ($headers as $k => $v) {
+            $k = strtolower(trim((string) $k));
+            if (! isset($h[$k])) {
+                $h[$k] = strtolower(trim((string) $v));
+            }
+        }
+        if ($source === 'graph' && ($h['x-ms-exchange-organization-authas'] ?? '') === 'internal') {
+            return true;
+        }
+        $ar = $h['authentication-results'] ?? '';
+        if ($ar === '') {
+            return false;
+        }
+        if (preg_match('/\b(dmarc|compauth)\s*=\s*pass\b/', $ar)) {
+            return true;
+        }
+        $domain = strtolower((string) substr((string) strrchr($from, '@'), 1));
+        if ($domain !== '' && preg_match_all('/\bdkim\s*=\s*pass\b[^;]*?\bheader\.d\s*=\s*([a-z0-9.\-]+)/', $ar, $m)) {
+            foreach ($m[1] as $d) {
+                if ($d === $domain || str_ends_with($domain, '.' . $d)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /** Find (or, per policy, create) the sender's user row. */
     private function senderUser(string $from, string $fromName): ?array
     {
-        $user = $this->db->table('users')->where('email', $from)->where('active', 1)->get()->getRowArray();
+        // Exact match only: under the column collation "devin@tickethüb.co"
+        // would otherwise resolve to devin@tickethub.co and post as him.
+        $user = Users::byEmail($from, true);
         if ($user) {
             return $user;
         }
-        if ($this->db->table('users')->where('email', $from)->countAllResults()) {
+        if (Users::emailTaken($from)) {
             log_message('warning', 'Inbound email from deactivated user {from} dropped.', ['from' => $from]);
 
             return null;
@@ -755,6 +804,15 @@ class TicketIntake
         }
         $isAgent = in_array($user['role'], ['Administrator', 'Supervisor', 'Agent'], true);
         $now     = date('Y-m-d H:i:s');
+        // Staff powers by email need proof the mail really came from them.
+        // An unverified message "from" an agent is not filed at all — neither
+        // as the agent (that is the spoof) nor as a new ticket in their name.
+        if ($isAgent && ! self::senderAuthenticated($from, (array) ($meta['headers'] ?? []), (string) ($meta['source'] ?? ''))) {
+            log_message('warning', 'Inbound email claiming to be from staff member {from} was not verified by the receiving mail server (no DMARC/DKIM pass); dropped.', ['from' => $from]);
+            Audit::log('inbound.unverified_staff_sender', $from . ' — ' . mb_substr($subject, 0, 120), (int) $user['id']);
+
+            return $skip('skipped', 'unverified staff sender ' . $from);
+        }
 
         // ---- threading: code in the subject, else In-Reply-To / References ----
         $t = null;
@@ -813,8 +871,12 @@ class TicketIntake
                     $kind = 'note';
                     $text = trim((string) preg_replace('/^\s*#note\b[ \t]*\r?\n?/i', '', $text, 1));
                 }
-                if (! self::agentCanSee($user, $t)) {
-                    log_message('warning', 'Inbound email: {who} replied to {code} outside their group scope; accepted because they were on the thread.', ['who' => $user['email'], 'code' => $t['code']]);
+                // Same scope rule as the workspace: quoting a code in a subject
+                // is not a way into another team's tickets.
+                if (! self::agentCanSee($user, $t) && ! in_array((int) $user['id'], self::watcherIds((int) $t['id']), true)) {
+                    log_message('warning', 'Inbound email: {who} replied to {code} outside their group scope; dropped.', ['who' => $user['email'], 'code' => $t['code']]);
+
+                    return $skip('skipped', 'staff reply outside group scope (' . $t['code'] . ')');
                 }
             }
             $row = [

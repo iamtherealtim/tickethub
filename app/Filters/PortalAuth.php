@@ -10,7 +10,7 @@ class PortalAuth implements FilterInterface
 {
     public function before(RequestInterface $request, $arguments = null)
     {
-        if (! session()->get('user_id')) {
+        if (! SessionUser::resolve()) {
             return redirect()->to('/login');
         }
 

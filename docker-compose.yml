@@ -61,7 +61,11 @@ services:
     environment:
       # The app container owns migrations; the scheduler only waits for the DB.
       SKIP_MIGRATIONS: "1"
-    command: ["sh", "/var/www/html/docker/cron.sh"]
+    # The entrypoint runs as root (waits for the DB, links the shared .env),
+    # then the scheduler drops to www-data: it parses untrusted inbound mail
+    # and attachments, and files it writes to the shared volume must stay
+    # owned by the web user.
+    command: ["setpriv", "--reuid=www-data", "--regid=www-data", "--init-groups", "sh", "/var/www/html/docker/cron.sh"]
     depends_on:
       app:
         condition: service_healthy

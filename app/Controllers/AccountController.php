@@ -39,9 +39,11 @@ class AccountController extends BaseController
                 'password_hash' => password_hash($new, PASSWORD_DEFAULT),
                 'must_change_password' => 0,
             ]);
-            // A password change must evict remembered devices and stale sessions.
+            // A password change must evict remembered devices and stale sessions,
+            // and any reset link still in someone's inbox.
             $this->invalidateOtherSessions();
             $this->bumpSessionEpoch();
+            $this->db->table('password_resets')->where('email', $this->me['email'])->delete();
             Audit::log('password.changed', $this->me['email']);
             $this->toast('Password changed — other devices have been signed out');
 
@@ -145,6 +147,9 @@ class AccountController extends BaseController
             'totp_recovery'   => json_encode(Totp::hashRecovery($codes)),
         ]);
         $this->session->remove('totp_pending_secret');
+        // A remembered device was trusted before 2FA existed; make it sign in
+        // again (with a code) rather than keep skipping the second factor.
+        $this->invalidateOtherSessions();
         $this->session->setFlashdata('recovery_codes', $codes);
         Audit::log('2fa.enabled', $this->me['email']);
         $this->toast('Two-factor authentication is on');

@@ -9,6 +9,7 @@ use App\Libraries\Oidc;
 use App\Libraries\Saml;
 use App\Libraries\Settings;
 use App\Libraries\Totp;
+use App\Libraries\Users;
 
 class AuthController extends BaseController
 {
@@ -53,16 +54,16 @@ class AuthController extends BaseController
     private const DUMMY_HASH = '$2y$10$u8XEVazbiqADTLzbsqloiu7ioInWHMpb45SzZbky2LoF/95rYTr5i';
 
     /**
-     * The tenant segment of the Microsoft login URL: a directory GUID, or the
-     * multi-tenant aliases "common" / "organizations". Only a GUID lets
-     * azureCallback() pin the issued token to one directory — see there.
+     * The tenant segment of the Microsoft login URL: a directory GUID only.
+     * The multi-tenant aliases ("common" / "organizations") are refused on
+     * purpose — with them anyone can create their own Entra tenant, set a
+     * user's mail attribute to one of ours and be issued a valid token for it
+     * (the "nOAuth" account-takeover pattern). A GUID lets azureCallback() pin
+     * every token to this one directory.
      */
     private function azureTenant(): ?string
     {
         $tenant = strtolower(trim(Settings::get('azure_tenant_id')));
-        if (in_array($tenant, ['common', 'organizations'], true)) {
-            return $tenant;
-        }
 
         return preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $tenant) ? $tenant : null;
     }
@@ -192,12 +193,8 @@ class AuthController extends BaseController
             $nonce  = (string) $this->session->get('azure_nonce');
             $this->session->remove('azure_nonce');
 
-            // With "common"/"organizations" there is no single tenant to pin to, so
-            // only the audience/nonce/expiry checks apply — any work account may
-            // sign in, which is why the admin page recommends a GUID.
-            $pinned = ! in_array($tenant, ['common', 'organizations'], true);
             if (! $claims
-                || ($pinned && ! hash_equals(strtolower($tenant), strtolower((string) ($claims['tid'] ?? ''))))
+                || ! hash_equals(strtolower($tenant), strtolower((string) ($claims['tid'] ?? '')))
                 || ! hash_equals(Settings::get('azure_client_id'), (string) ($claims['aud'] ?? ''))
                 || ($nonce !== '' && ! hash_equals($nonce, (string) ($claims['nonce'] ?? '')))
                 || (int) ($claims['exp'] ?? 0) < time()) {
@@ -233,15 +230,30 @@ class AuthController extends BaseController
             $user = $this->db->table('users')->where('azure_oid', $azureOid)->get()->getRowArray();
         }
         if (! $user) {
-            $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+            $user = Users::byEmail($email);
+            if ($user && ! empty($user['azure_oid']) && $user['azure_oid'] !== $azureOid) {
+                // Already bound to a different directory object: a second
+                // identity claiming the same mailbox never takes the account over.
+                log_message('warning', 'Azure SSO: {email} is bound to another directory object; refusing to rebind.', ['email' => $email]);
+                Audit::log('sso.rebind_refused', $email, (int) $user['id']);
+                $this->session->setFlashdata('error', 'Microsoft sign-in failed: this account is linked to a different Microsoft identity. Contact an administrator.');
+
+                return redirect()->to('/login');
+            }
             // First successful sign-in binds this account to the directory object.
-            if ($user && $azureOid !== '') {
+            if ($user && $azureOid !== '' && empty($user['azure_oid'])) {
                 $this->db->table('users')->where('id', $user['id'])->update(['azure_oid' => $azureOid]);
             }
         }
 
         $mappedRole = $this->roleFromGroups($claims);
 
+        if (! $user && Users::emailTaken($email)) {
+            // A look-alike of an existing address (accents, case): never link, never duplicate.
+            $this->session->setFlashdata('error', 'Microsoft sign-in failed: that email conflicts with an existing account. Contact an administrator.');
+
+            return redirect()->to('/login');
+        }
         if (! $user) {
             if (Settings::get('azure_autoprovision') !== '1') {
                 $this->session->setFlashdata('error', 'Microsoft sign-in failed: no matching account. Ask an administrator to invite you.');
@@ -259,7 +271,7 @@ class AuthController extends BaseController
                 'active' => 1, 'azure_oid' => $azureOid ?: null,
                 'created_at' => $now, 'updated_at' => $now,
             ]);
-            $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+            $user = $this->db->table('users')->where('id', $this->db->insertID())->get()->getRowArray();
             Audit::log('sso.provisioned', $email . ' as ' . $role, (int) $user['id']);
         } elseif ($mappedRole !== null && $mappedRole !== $user['role']) {
             // Directory group membership is the source of truth once mapping is on.
@@ -292,7 +304,7 @@ class AuthController extends BaseController
 
     public function attempt()
     {
-        $email    = trim((string) $this->request->getPost('email'));
+        $email    = Users::normalize((string) $this->request->getPost('email'));
         $password = (string) $this->request->getPost('password');
 
         // Throttle: 5 attempts per minute per IP+email.
@@ -300,7 +312,7 @@ class AuthController extends BaseController
         // one common password across many accounts.
         $throttler = service('throttler');
         $ip        = $this->request->getIPAddress();
-        $perAccount = $throttler->check('login_' . md5($ip . '|' . strtolower($email)), 5, MINUTE);
+        $perAccount = $throttler->check('login_' . md5($ip . '|' . $email), 5, MINUTE);
         $perIp      = $throttler->check('loginip_' . md5($ip), 20, 15 * MINUTE);
         if ($perAccount === false || $perIp === false) {
             Audit::log('login.throttled', $email);
@@ -309,11 +321,12 @@ class AuthController extends BaseController
             return redirect()->to('/login');
         }
 
-        $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+        $user = Users::byEmail($email);
 
         // Directory accounts: when LDAP is on and this is not a local account,
         // the directory decides. Local users keep their local password.
-        $provider = 'local';
+        $provider     = 'local';
+        $directoryOwns = Ldap::enabled() && $user && ($user['auth_provider'] ?? '') === 'ldap';
         if (Ldap::enabled() && (! $user || ($user['auth_provider'] ?? '') === 'ldap')) {
             try {
                 $entry = Ldap::authenticate($email, $password);
@@ -339,7 +352,21 @@ class AuthController extends BaseController
         $ok = $provider === 'ldap' || ($user
             ? password_verify($password, $user['password_hash'])
             : (password_verify($password, self::DUMMY_HASH) && false));
+        // A directory-owned account whose directory bind just failed does not
+        // get a second chance on a local password: the directory decides, so
+        // someone disabled in AD stays out even if a local hash exists.
+        if ($directoryOwns && $provider !== 'ldap') {
+            $ok = false;
+        }
 
+        // SSO-required accounts get the same answer whether or not the password
+        // was right, so this message never confirms a guessed password.
+        if ($user && $provider === 'local' && (int) $user['active'] && $this->localLoginBlocked($user)) {
+            Audit::log('login.sso_required', $email);
+            $this->session->setFlashdata('error', 'Your role requires single sign-on — use one of the buttons below instead of a password.');
+
+            return redirect()->to('/login');
+        }
         if (! $ok) {
             Audit::log('login.failed', $email);
             $this->session->setFlashdata('error', 'That email and password combination does not match.');
@@ -348,12 +375,6 @@ class AuthController extends BaseController
         }
         if (! (int) $user['active']) {
             $this->session->setFlashdata('error', 'This account has been deactivated. Contact an administrator.');
-
-            return redirect()->to('/login');
-        }
-        if ($provider === 'local' && $this->localLoginBlocked($user)) {
-            Audit::log('login.sso_required', $email);
-            $this->session->setFlashdata('error', 'Your role requires single sign-on — use one of the buttons below instead of a password.');
 
             return redirect()->to('/login');
         }
@@ -378,15 +399,7 @@ class AuthController extends BaseController
      */
     private function localLoginBlocked(array $user): bool
     {
-        if ($user['role'] === 'Administrator') {
-            return false;
-        }
-        $policy = Settings::get('sso_required_roles', 'none');
-        if ($policy === 'all') {
-            return true;
-        }
-
-        return $policy === 'agents' && in_array($user['role'], ['Supervisor', 'Agent'], true);
+        return Users::localPasswordBlocked($user);
     }
 
     /* ---------- shared login completion + two-factor ---------- */
@@ -485,9 +498,14 @@ class AuthController extends BaseController
             return redirect()->to('/login');
         }
         $throttler = service('throttler');
-        if ($throttler->check('twofa_' . md5($this->request->getIPAddress() . '|' . $user['id']), 5, MINUTE) === false) {
+        // Two buckets: per IP+account (quick feedback) and per account alone,
+        // so spreading guesses over many IPs does not multiply the budget.
+        // 20 per 15 minutes across all IPs keeps a 6-digit guess (3 valid
+        // codes at a time) to well under 1% per day.
+        if ($throttler->check('twofa_' . md5($this->request->getIPAddress() . '|' . $user['id']), 5, MINUTE) === false
+            || $throttler->check('twofa_user_' . $user['id'], 20, 15 * MINUTE) === false) {
             Audit::log('login.2fa_throttled', $user['email'], (int) $user['id']);
-            $this->session->setFlashdata('error', 'Too many attempts. Wait a minute, then try again.');
+            $this->session->setFlashdata('error', 'Too many attempts. Wait a few minutes, then try again.');
 
             return redirect()->to('/login/2fa');
         }
@@ -495,12 +513,31 @@ class AuthController extends BaseController
         $code = trim((string) $this->request->getPost('code'));
         $ok   = false;
         if (preg_match('/^\d{6}$/', preg_replace('/\s+/', '', $code) ?? '')) {
-            $ok = Totp::verify(Totp::decryptSecret($user['totp_secret']), $code);
+            $step = Totp::verifyStep(Totp::decryptSecret($user['totp_secret']), $code);
+            $last = isset($user['totp_last_step']) ? (int) $user['totp_last_step'] : null;
+            if ($step !== null && ($last === null || $step > $last)) {
+                // Conditional write: two requests racing with the same code
+                // cannot both succeed.
+                $q = $this->db->table('users')->where('id', $user['id']);
+                $last === null ? $q->where('totp_last_step IS NULL', null, false) : $q->where('totp_last_step', $last);
+                if ($this->db->fieldExists('totp_last_step', 'users')) {
+                    $q->update(['totp_last_step' => $step]);
+                    $ok = $this->db->affectedRows() === 1;
+                } else {
+                    $ok = true;
+                }
+            }
         } else {
-            $left = Totp::consumeRecovery(json_decode((string) ($user['totp_recovery'] ?? '[]'), true) ?: [], $code);
+            $stored = (string) ($user['totp_recovery'] ?? '[]');
+            $left   = Totp::consumeRecovery(json_decode($stored, true) ?: [], $code);
             if ($left !== null) {
-                $ok = true;
-                $this->db->table('users')->where('id', $user['id'])->update(['totp_recovery' => json_encode($left)]);
+                // Only succeeds if nobody consumed a code between our read and
+                // this write — a single recovery code can never be spent twice.
+                $this->db->table('users')->where('id', $user['id'])->where('totp_recovery', $stored)
+                    ->update(['totp_recovery' => json_encode($left)]);
+                $ok = $this->db->affectedRows() === 1;
+            }
+            if ($ok) {
                 Audit::log('login.2fa_recovery_used', $user['email'] . ' (' . count($left) . ' left)', (int) $user['id']);
                 if (count($left) <= 2) {
                     $this->session->setFlashdata('toast', ['msg' => 'Only ' . count($left) . ' recovery codes left — generate new ones under Security', 'kind' => 'warn']);
@@ -535,7 +572,20 @@ class AuthController extends BaseController
         }
         if (! $user) {
             // The login may have been a sAMAccountName; match the mail attribute too.
-            $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+            $user = Users::byEmail($email);
+            if (! $user && Users::emailTaken($email)) {
+                $this->session->setFlashdata('error', 'Directory sign-in failed: that email conflicts with an existing account. Contact an administrator.');
+
+                return null;
+            }
+            // A local Administrator is the break-glass account: a directory entry
+            // that happens to carry the same mail attribute never converts it.
+            if ($user && ($user['auth_provider'] ?? 'local') !== 'ldap' && $user['role'] === 'Administrator') {
+                Audit::log('ldap.admin_link_refused', $email, (int) $user['id']);
+                $this->session->setFlashdata('error', 'That email belongs to a local administrator account. Sign in with its email and password instead.');
+
+                return null;
+            }
         }
         $mappedRole = Ldap::roleFromGroups($entry['groups']);
         $now        = date('Y-m-d H:i:s');
@@ -562,7 +612,7 @@ class AuthController extends BaseController
                 'active' => 1, 'auth_provider' => 'ldap',
                 'created_at' => $now, 'updated_at' => $now,
             ]);
-            $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
+            $user = $this->db->table('users')->where('id', $this->db->insertID())->get()->getRowArray();
             Audit::log('ldap.provisioned', $email . ' as ' . $role, (int) $user['id']);
 
             return $user;
@@ -665,31 +715,101 @@ class AuthController extends BaseController
             return redirect()->to('/login');
         }
         $name = trim((string) ($claims['name'] ?? trim(($claims['given_name'] ?? '') . ' ' . ($claims['family_name'] ?? '')))) ?: $email;
-        $mappedRole = Oidc::roleFromClaims($claims);
 
-        $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
-        if (! $user) {
-            $now  = date('Y-m-d H:i:s');
-            $role = $mappedRole ?? 'Requester';
-            $this->db->table('users')->insert([
-                'name' => mb_substr($name, 0, 100), 'email' => $email,
-                'password_hash' => password_hash(bin2hex(random_bytes(24)), PASSWORD_DEFAULT),
-                'role' => $role, 'title' => $role === 'Requester' ? 'Employee' : 'Support Analyst',
-                'group_id' => $role === 'Requester' ? null : ((int) Settings::get('default_group_id', '1') ?: null),
-                'color' => ['brand', 'ink', 'violet', 'signal'][random_int(0, 3)],
-                'active' => 1, 'auth_provider' => 'oidc',
-                'created_at' => $now, 'updated_at' => $now,
-            ]);
-            $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
-            Audit::log('oidc.provisioned', $email . ' as ' . $role, (int) $user['id']);
-        } else {
+        return $this->ssoSignIn(
+            'oidc',
+            'oidc|' . rtrim(Settings::get('oidc_issuer'), '/') . '|' . (string) $claims['sub'],
+            $email,
+            $name,
+            Oidc::roleFromClaims($claims),
+            $label,
+            // Linking to an account that already exists needs a positive
+            // verification from the provider, not just the absence of a "no".
+            filter_var($claims['email_verified'] ?? false, FILTER_VALIDATE_BOOLEAN)
+        );
+    }
+
+    /**
+     * Shared tail of the OIDC and SAML callbacks: find or create the account
+     * for a verified external identity, then hand over to beginLogin().
+     *
+     * - The provider's own stable id ($subject) is bound on first sign-in;
+     *   a later sign-in with the same email but a different subject is
+     *   refused, so an IdP account that merely claims an address cannot take
+     *   over whoever already owns it.
+     * - Emails are matched exactly (Users::byEmail), never through the
+     *   accent/case-folding column collation; a look-alike is a conflict.
+     * - An optional "<provider>_allowed_domains" list restricts who may sign
+     *   in at all (essential when the issuer is a public one like Google).
+     * - $canLinkExisting=false (an unverified email) may create a new account
+     *   but never attaches to an existing one.
+     */
+    private function ssoSignIn(string $provider, string $subject, string $email, string $name, ?string $mappedRole, string $label, bool $canLinkExisting = true)
+    {
+        $email   = Users::normalize($email);
+        $allowed = array_values(array_filter(array_map(
+            static fn ($d) => strtolower(ltrim(trim($d), '@')),
+            explode(',', Settings::get($provider . '_allowed_domains'))
+        )));
+        $domain = strtolower((string) substr((string) strrchr($email, '@'), 1));
+        if ($allowed && ! in_array($domain, $allowed, true)) {
+            Audit::log($provider . '.domain_refused', $email);
+            $this->session->setFlashdata('error', $label . ' failed: accounts from ' . $domain . ' cannot sign in here.');
+
+            return redirect()->to('/login');
+        }
+
+        $user = Users::byEmail($email);
+        if (! $user && Users::emailTaken($email)) {
+            $this->session->setFlashdata('error', $label . ' failed: that email conflicts with an existing account. Contact an administrator.');
+
+            return redirect()->to('/login');
+        }
+        $hasColumn = $this->db->fieldExists('sso_subject', 'users');
+
+        if ($user) {
+            $bound = $hasColumn ? (string) ($user['sso_subject'] ?? '') : '';
+            if ($bound !== '' && ! hash_equals($bound, $subject)) {
+                log_message('warning', '{p}: {email} is bound to another identity; refusing sign-in.', ['p' => $provider, 'email' => $email]);
+                Audit::log($provider . '.rebind_refused', $email, (int) $user['id']);
+                $this->session->setFlashdata('error', $label . ' failed: this account is linked to a different identity. Contact an administrator.');
+
+                return redirect()->to('/login');
+            }
+            if ($bound === '' && ! $canLinkExisting) {
+                $this->session->setFlashdata('error', $label . ' failed: the provider did not confirm your email address, so it cannot be linked to an existing account.');
+
+                return redirect()->to('/login');
+            }
             $update = [];
-            $this->applyMappedRole($user, $mappedRole, $update, 'oidc');
+            if ($hasColumn && $bound === '') {
+                $update['sso_subject'] = $subject;
+                Audit::log($provider . '.linked', $email, (int) $user['id']);
+            }
+            $this->applyMappedRole($user, $mappedRole, $update, $provider);
             if ($update) {
                 $update['updated_at'] = date('Y-m-d H:i:s');
                 $this->db->table('users')->where('id', $user['id'])->update($update);
                 $user = array_merge($user, $update);
             }
+        } else {
+            $now  = date('Y-m-d H:i:s');
+            $role = $mappedRole ?? 'Requester';
+            $row  = [
+                'name' => mb_substr($name, 0, 100), 'email' => $email,
+                'password_hash' => password_hash(bin2hex(random_bytes(24)), PASSWORD_DEFAULT),
+                'role' => $role, 'title' => $role === 'Requester' ? 'Employee' : 'Support Analyst',
+                'group_id' => $role === 'Requester' ? null : ((int) Settings::get('default_group_id', '1') ?: null),
+                'color' => ['brand', 'ink', 'violet', 'signal'][random_int(0, 3)],
+                'active' => 1, 'auth_provider' => $provider,
+                'created_at' => $now, 'updated_at' => $now,
+            ];
+            if ($hasColumn) {
+                $row['sso_subject'] = $subject;
+            }
+            $this->db->table('users')->insert($row);
+            $user = $this->db->table('users')->where('id', $this->db->insertID())->get()->getRowArray();
+            Audit::log($provider . '.provisioned', $email . ' as ' . $role, (int) $user['id']);
         }
 
         if (! (int) $user['active']) {
@@ -698,7 +818,7 @@ class AuthController extends BaseController
             return redirect()->to('/login');
         }
 
-        return $this->beginLogin($user, false, 'oidc');
+        return $this->beginLogin($user, false, $provider);
     }
 
     /* ---------- SAML 2.0 ---------- */
@@ -712,7 +832,19 @@ class AuthController extends BaseController
         }
 
         try {
-            return redirect()->to(Saml::loginUrl());
+            $start  = Saml::beginLogin();
+            $secure = $this->request->isSecure();
+            // Ties the response to this browser (see Saml::processAcs). The IdP
+            // answers with a cross-site POST, which only carries a cookie marked
+            // SameSite=None — and browsers only accept that on a Secure cookie,
+            // so the binding applies on HTTPS (always, in production).
+            $this->response->setCookie([
+                'name' => 'th_saml', 'value' => $start['nonce'], 'expire' => 900,
+                'path' => '/', 'httponly' => true, 'secure' => $secure,
+                'samesite' => $secure ? 'None' : 'Lax',
+            ]);
+
+            return redirect()->to($start['url'])->withCookies();
         } catch (\Throwable $e) {
             log_message('error', 'SAML start failed: {msg}', ['msg' => $e->getMessage()]);
             $this->session->setFlashdata('error', 'Single sign-on failed: could not build the sign-in request.');
@@ -730,7 +862,8 @@ class AuthController extends BaseController
         }
 
         try {
-            $result = Saml::processAcs();
+            $result = Saml::processAcs((string) ($this->request->getCookie('th_saml') ?? ''), $this->request->isSecure());
+            $this->response->deleteCookie('th_saml');
         } catch (\RuntimeException $e) {
             log_message('error', 'SAML sign-in rejected: {msg}', ['msg' => $e->getMessage()]);
             $this->session->setFlashdata('error', $label . ' failed: ' . $e->getMessage());
@@ -744,41 +877,15 @@ class AuthController extends BaseController
         }
 
         $email = $result['email'];
-        $name  = $result['name'] !== '' ? $result['name'] : $email;
-        $mappedRole = Saml::roleFromAttributes($result['attributes']);
 
-        $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
-        if (! $user) {
-            $now  = date('Y-m-d H:i:s');
-            $role = $mappedRole ?? 'Requester';
-            $this->db->table('users')->insert([
-                'name' => mb_substr($name, 0, 100), 'email' => $email,
-                'password_hash' => password_hash(bin2hex(random_bytes(24)), PASSWORD_DEFAULT),
-                'role' => $role, 'title' => $role === 'Requester' ? 'Employee' : 'Support Analyst',
-                'group_id' => $role === 'Requester' ? null : ((int) Settings::get('default_group_id', '1') ?: null),
-                'color' => ['brand', 'ink', 'violet', 'signal'][random_int(0, 3)],
-                'active' => 1, 'auth_provider' => 'saml',
-                'created_at' => $now, 'updated_at' => $now,
-            ]);
-            $user = $this->db->table('users')->where('email', $email)->get()->getRowArray();
-            Audit::log('saml.provisioned', $email . ' as ' . $role, (int) $user['id']);
-        } else {
-            $update = [];
-            $this->applyMappedRole($user, $mappedRole, $update, 'saml');
-            if ($update) {
-                $update['updated_at'] = date('Y-m-d H:i:s');
-                $this->db->table('users')->where('id', $user['id'])->update($update);
-                $user = array_merge($user, $update);
-            }
-        }
-
-        if (! (int) $user['active']) {
-            $this->session->setFlashdata('error', 'This account has been deactivated. Contact an administrator.');
-
-            return redirect()->to('/login');
-        }
-
-        return $this->beginLogin($user, false, 'saml');
+        return $this->ssoSignIn(
+            'saml',
+            'saml|' . Settings::get('saml_idp_entity_id') . '|' . $result['nameId'],
+            $email,
+            $result['name'] !== '' ? $result['name'] : $email,
+            Saml::roleFromAttributes($result['attributes']),
+            $label
+        );
     }
 
     /** SP metadata for the IdP to import — public, no session, no secrets. */
@@ -833,7 +940,7 @@ class AuthController extends BaseController
 
     public function sendReset()
     {
-        $email = strtolower(trim((string) $this->request->getPost('email')));
+        $email = Users::normalize((string) $this->request->getPost('email'));
 
         $throttler = service('throttler');
         if ($throttler->check('reset_' . md5($this->request->getIPAddress()), 5, MINUTE) === false) {
@@ -847,17 +954,27 @@ class AuthController extends BaseController
             return redirect()->to('/forgot');
         }
 
-        $user = $this->db->table('users')->where('email', $email)->where('active', 1)->get()->getRowArray();
+        // Exact match only (see Users::byEmail): the loose column collation
+        // would let "maya@tickethüb.co" find maya@tickethub.co's account.
+        $user = Users::byEmail($email, true);
+        // Accounts that sign in through a directory or identity provider never
+        // get a local password by email — that would be a way around the
+        // provider (a user disabled in AD, or the IdP's own MFA).
+        if ($user && in_array($user['auth_provider'] ?? 'local', ['ldap', 'azure', 'oidc', 'saml'], true)) {
+            Audit::log('password.reset_refused_sso', $user['email'], (int) $user['id']);
+            $user = null;
+        }
         if ($user) {
+            $to    = (string) $user['email']; // the stored address, never the typed one
             $token = bin2hex(random_bytes(24));
-            $this->db->table('password_resets')->where('email', $email)->delete();
+            $this->db->table('password_resets')->where('email', $to)->delete();
             $this->db->table('password_resets')->insert([
-                'email'      => $email,
+                'email'      => $to,
                 'token_hash' => hash('sha256', $token),
                 'expires_at' => date('Y-m-d H:i:s', time() + 3600),
                 'created_at' => date('Y-m-d H:i:s'),
             ]);
-            Mailer::send($email, 'Reset your TicketHub password',
+            Mailer::send($to, 'Reset your TicketHub password',
                 'Hi ' . explode(' ', $user['name'])[0] . ",\n\nSomeone (hopefully you) asked to reset your TicketHub password."
                 . " The link below works once and expires in an hour:\n\n" . site_url('reset/' . $token)
                 . "\n\nIf this was not you, ignore this message — nothing changes.\n\n— TicketHub");
@@ -910,14 +1027,23 @@ class AuthController extends BaseController
 
             return redirect()->to('/reset/' . $token);
         }
-        $this->db->table('users')->where('email', $row['email'])->update([
+        $user = Users::byEmail((string) $row['email'], true);
+        if (! $user) {
+            $this->db->table('password_resets')->where('token_hash', $row['token_hash'])->delete();
+            $this->session->setFlashdata('error', 'That reset link is invalid or has expired. Request a new one.');
+
+            return redirect()->to('/forgot');
+        }
+        // By id: exactly the account the link was issued for, nothing the
+        // collation happens to consider equal.
+        $this->db->table('users')->where('id', $user['id'])->update([
             'password_hash' => password_hash($pass, PASSWORD_DEFAULT),
             'remember_selector' => null, 'remember_validator' => null, 'remember_expires' => null,
             'must_change_password' => 0,
         ]);
         // Every existing session for this account is now stale (see App\Filters\SessionEpoch).
-        $this->db->table('users')->where('email', $row['email'])->set('session_epoch', 'session_epoch + 1', false)->update();
-        $this->db->table('password_resets')->where('email', $row['email'])->delete();
+        $this->db->table('users')->where('id', $user['id'])->set('session_epoch', 'session_epoch + 1', false)->update();
+        $this->db->table('password_resets')->where('email', $user['email'])->delete();
         Audit::log('password.reset_completed', $row['email']);
         $this->session->setFlashdata('error', '');
         $this->toast('Password changed — sign in with the new one');
