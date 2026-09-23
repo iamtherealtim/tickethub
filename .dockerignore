@@ -53,3 +53,7 @@ Dockerfile
 Thumbs.db
 .DS_Store
 northgate-service-desk.html
+
+# Caddy build context and certificates are not part of the app image.
+docker/caddy/
+docker/certs/

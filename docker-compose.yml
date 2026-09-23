@@ -1,22 +1,51 @@
-# TicketHub — local/production-style stack.
+# TicketHub — the whole stack, HTTPS included.
 #
-#   cp docker/.env.docker.example .env.docker   # edit at least the passwords
+#   cp docker/.env.docker.example .env.docker   # set TICKETHUB_DOMAIN + passwords
 #   docker compose up -d --build
 #   docker compose exec app php spark tickethub:setup --email you@company.com
 #
-# Then open http://localhost:8080.
+# Then open https://<TICKETHUB_DOMAIN>/ — or http://localhost/ when no domain
+# is set. Changing .env.docker and re-running `docker compose up -d` applies
+# the new settings. Certificate options: docs/https.md.
 #
-# app   Apache + PHP 8.4 serving public/, migrations run on start (see docker/entrypoint.sh)
-# db    MariaDB 11 with a persistent volume
-# cron  same image, runs the schedulers in a loop (see docker/cron.sh)
+# caddy  the front door: ports 80 + 443, HTTPS certificates (see docker/caddy/start.sh)
+# app    Apache + PHP 8.4 serving public/, migrations run on start (see docker/entrypoint.sh)
+# db     MariaDB 11 with a persistent volume
+# cron   same image as app, runs the schedulers in a loop (see docker/cron.sh)
+#
+# Ports 80/443 already taken on this host? Put the mapping you want in a
+# docker-compose.override.yml (e.g. "8080:80"), and set APP_BASE_URL to match.
 
 services:
+  caddy:
+    build: docker/caddy
+    image: tickethub-caddy:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    env_file:
+      - .env.docker
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      # Certificates, ACME account and the internal CA. Keep this volume:
+      # losing it means re-issuing certificates (and a new internal root).
+      - caddy_data:/data
+      - caddy_config:/config
+      # TICKETHUB_TLS=files: your certificate and key (read-only).
+      - ./docker/certs:/certs:ro
+
   app:
     build: .
     image: tickethub:latest
     restart: unless-stopped
-    ports:
-      - "8080:80"
+    # No published ports: everything arrives through caddy, which is why the
+    # app trusts X-Forwarded-* from the private ranges (docker/env-sync.php).
+    expose:
+      - "80"
     env_file:
       - .env.docker
     depends_on:
@@ -25,10 +54,13 @@ services:
     volumes:
       # Uploaded attachments, sessions, logs and the generated .env survive restarts.
       - app_writable:/var/www/html/writable
+      # Read-only view of Caddy's data, so Admin → Address & HTTPS can offer the
+      # internal CA's root certificate for download (TICKETHUB_TLS=internal).
+      - caddy_data:/caddy-data:ro
       # To manage .env yourself instead of the generated one, uncomment:
       # - ./.env:/var/www/html/.env:ro
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost/login"]
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost/login"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -77,3 +109,5 @@ services:
 volumes:
   db_data:
   app_writable:
+  caddy_data:
+  caddy_config:

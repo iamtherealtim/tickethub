@@ -204,10 +204,45 @@ class App extends BaseConfig
     {
         parent::__construct();
 
-        // HTTPS + HSTS is mandatory in production; dev runs on plain localhost.
+        // In production the site is HTTPS-only (redirect + HSTS + Secure cookies)
+        // whenever its address is https://. A production site deliberately on
+        // http:// (a Docker demo on localhost, a closed lab network) is served as
+        // configured; Admin → Address & HTTPS flags it. Dev runs on plain localhost.
         // An explicit app.forceGlobalSecureRequests in .env still wins.
         if (env('app.forceGlobalSecureRequests') === null) {
-            $this->forceGlobalSecureRequests = ENVIRONMENT === 'production';
+            $this->forceGlobalSecureRequests = ENVIRONMENT === 'production'
+                && str_starts_with(strtolower($this->baseURL), 'https://');
         }
+
+        // CodeIgniter only fills array settings key by key from .env, so the
+        // natural `app.proxyIPs = 10.0.0.0/8` line would otherwise be ignored.
+        $proxies = env('app.proxyIPs');
+        if (is_string($proxies) && trim($proxies) !== '') {
+            $this->proxyIPs = self::parseProxyIPs($proxies);
+        }
+    }
+
+    /**
+     * "10.0.0.0/8, 172.16.0.0/12" or "10.0.0.5/32:X-Real-IP, fd00::/8" →
+     * [cidr => client-IP header]. The header defaults to X-Forwarded-For.
+     *
+     * @return array<string, string>
+     */
+    public static function parseProxyIPs(string $raw): array
+    {
+        $out = [];
+        foreach (preg_split('/[\s,]+/', trim($raw)) ?: [] as $entry) {
+            if ($entry === '') {
+                continue;
+            }
+            $header = 'X-Forwarded-For';
+            // A header name always contains a dash; an IPv6 address never ends in one.
+            if (preg_match('/^(.+):([A-Za-z][A-Za-z0-9]*-[A-Za-z0-9-]+)$/', $entry, $m)) {
+                [$entry, $header] = [$m[1], $m[2]];
+            }
+            $out[$entry] = $header;
+        }
+
+        return $out;
     }
 }

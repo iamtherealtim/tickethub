@@ -17,6 +17,29 @@ Upgrade notes for operators live in [docs/UPGRADING.md](docs/UPGRADING.md).
   hand-rolled; every assertion must be signed. This is the one optional
   feature that needs `composer install` — everything else still runs
   without it.
+- **HTTPS out of the box with Docker.** A bundled Caddy now sits in front of
+  the app on ports 80 and 443. Set `TICKETHUB_DOMAIN` and choose
+  `TICKETHUB_TLS`:
+  - `auto`: Let's Encrypt.
+  - `dns`: Let's Encrypt via Cloudflare, Azure DNS or Route 53, for internal
+    sites.
+  - `files`: your own or company-CA certificate.
+  - `internal`: a self-run authority, with a root-certificate download for
+    GPO/Intune.
+  - `upstream`: HTTPS is handled in front.
+
+  Misconfigurations stop with a message saying which setting to fix. See
+  [docs/https.md](docs/https.md).
+- **Admin → Address & HTTPS.** Shows the configured address against how you
+  actually reached the page, whether HTTPS and any proxy are working, and the
+  certificate's issuer, names and expiry. Every problem comes with the exact
+  line that fixes it. It also lists the callback URLs to give Entra, OIDC,
+  SAML and the inbound-email service. Administrators see a banner across the
+  workspace while something is wrong.
+- **`php spark tickethub:url`** shows or sets the site address and trusted
+  proxies in `.env`, validates the address, and lists the callback URLs to
+  update elsewhere. `tickethub:setup` gains `--url` and asks for the address
+  when it's still localhost.
 
 ### Changed
 
@@ -39,6 +62,18 @@ Upgrade notes for operators live in [docs/UPGRADING.md](docs/UPGRADING.md).
   Needs Safari 16.4+, Chrome 111+ or Firefox 128+.
 
 ### Fixed
+
+- **Docker quick start redirected to a dead https:// page.** It ran in
+  production mode on `http://localhost:8080`, and production mode forced
+  HTTPS. HTTPS is now enforced when the site address is `https://`, and the
+  Secure cookie flag follows the same rule, so a plain-http local demo works.
+- **Redirect loop behind a TLS-terminating proxy.** `app.proxyIPs` set in
+  `.env` (and Docker's `APP_PROXY_IPS`) was silently ignored, because
+  CodeIgniter only fills array settings key by key. It's now parsed as a
+  comma-separated list, e.g. `app.proxyIPs = 10.0.0.5/32`.
+- **Docker ignored changes to `.env.docker` after the first boot.** The
+  environment, address, proxies and database settings are now re-applied
+  on every start. The encryption key and any keys you added by hand are kept.
 
 ### Security
 
