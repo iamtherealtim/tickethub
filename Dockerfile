@@ -17,8 +17,13 @@ RUN composer install --no-dev --no-interaction --no-progress --optimize-autoload
 
 FROM php:8.4-apache
 
-# System libraries for the PHP extensions TicketHub uses.
+# PHP extensions TicketHub uses. The -dev packages are only needed to compile
+# them; afterwards every runtime library the compiled extensions link against
+# is marked "manual" before the purge (the pattern the official php images
+# use). Purging the -dev packages alone also auto-removed libicu, libzip,
+# libldap… and left intl, gd, ldap and zip unable to load.
 RUN set -eux; \
+    savedAptMark="$(apt-mark showmanual)"; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         libicu-dev \
@@ -29,14 +34,20 @@ RUN set -eux; \
         libwebp-dev \
         libldap2-dev \
         libzip-dev \
-        default-mysql-client \
-        unzip \
         ; \
     docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
     docker-php-ext-configure ldap --with-libdir=lib/$(uname -m)-linux-gnu/; \
     docker-php-ext-install -j"$(nproc)" intl mbstring mysqli gd ldap zip opcache; \
-    apt-get purge -y --auto-remove libicu-dev libonig-dev libpng-dev libjpeg62-turbo-dev libfreetype6-dev libwebp-dev libldap2-dev libzip-dev; \
-    rm -rf /var/lib/apt/lists/*
+    apt-mark auto '.*' > /dev/null; \
+    [ -z "$savedAptMark" ] || apt-mark manual $savedAptMark > /dev/null; \
+    find /usr/local/lib/php/extensions -type f -name '*.so' -exec ldd '{}' ';' \
+        | awk '/=>/ { so = $(NF-1); if (index(so, "/usr/local/") == 1) { next }; gsub("^/(usr/)?", "", so); printf "*%s\n", so }' \
+        | sort -u | xargs -r dpkg-query --search | cut -d: -f1 | sort -u | xargs -r apt-mark manual; \
+    apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
+    apt-get install -y --no-install-recommends default-mysql-client unzip; \
+    rm -rf /var/lib/apt/lists/*; \
+    # Fail the build, not the first request, if an extension cannot load.
+    php -r 'foreach (["intl", "mbstring", "mysqli", "gd", "ldap", "zip", "curl", "openssl", "Zend OPcache"] as $e) { if (! extension_loaded($e)) { fwrite(STDERR, "missing PHP extension: $e\n"); exit(1); } } echo "extensions ok\n";'
 
 # Production php.ini plus opcache tuned for a long-running web process.
 RUN set -eux; \
