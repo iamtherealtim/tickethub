@@ -195,7 +195,9 @@ jobs:
           grep -E '^TICKETHUB_' .env.docker
 
       - name: Start it
-        run: docker compose up -d --build --wait --wait-timeout 300
+        run: |
+          docker compose up -d --build --wait --wait-timeout 300
+          docker compose exec -T app php -m | grep -xE 'intl|gd|ldap|zip|mysqli|mbstring' | sort | tr '\n' ' '; echo
 
       - name: HTTPS, redirect, certificate and sign-in
         run: |
