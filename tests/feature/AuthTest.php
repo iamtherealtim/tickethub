@@ -119,6 +119,32 @@ final class AuthTest extends FeatureTestCase
             ->assertRedirectTo('/account/new-password');
     }
 
+    /** The admin's `sso_required_roles` policy blocks even a correct local password for roles in scope. */
+    public function testSsoRequiredPolicyBlocksLocalPasswordForRolesInScope(): void
+    {
+        $admin = $this->userByEmail(self::ADMIN_EMAIL);
+        $this->postForm('app/admin/identity/sso-required', ['sso_required_roles' => 'agents'], $this->sessionFor((int) $admin['id']))
+            ->assertRedirectTo('/app/admin/identity');
+
+        $result = $this->postForm('login', ['email' => self::AGENT_EMAIL, 'password' => self::DEMO_PASSWORD]);
+
+        $result->assertRedirectTo('/login');
+        $result->assertSessionMissing('user_id');
+        $this->assertSame(1, $this->db->table('audit_log')->where('action', 'login.sso_required')->countAllResults());
+    }
+
+    /** Administrators are the break-glass exemption: the policy never locks them out, even at its strictest. */
+    public function testSsoRequiredPolicyAlwaysExemptsAdministrators(): void
+    {
+        $admin = $this->userByEmail(self::ADMIN_EMAIL);
+        $this->postForm('app/admin/identity/sso-required', ['sso_required_roles' => 'all'], $this->sessionFor((int) $admin['id']));
+
+        $result = $this->postForm('login', ['email' => self::ADMIN_EMAIL, 'password' => self::DEMO_PASSWORD]);
+
+        $result->assertRedirectTo('/app/dashboard');
+        $result->assertSessionHas('user_id', $admin['id']);
+    }
+
     /**
      * Five attempts per minute per IP+email; the sixth is throttled even when
      * the password is right. Kept last so no other test shares its bucket.
