@@ -1,6 +1,6 @@
 # TicketHub
 
-[![CI](https://github.com/<org>/tickethub/actions/workflows/ci.yml/badge.svg)](https://github.com/<org>/tickethub/actions/workflows/ci.yml)
+[![CI](https://github.com/iamtherealtim/tickethub/actions/workflows/ci.yml/badge.svg)](https://github.com/iamtherealtim/tickethub/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PHP 8.2+](https://img.shields.io/badge/php-8.2%2B-777bb4.svg)](composer.json)
 [![CodeIgniter 4](https://img.shields.io/badge/CodeIgniter-4.7-ef4223.svg)](https://codeigniter.com)
@@ -85,7 +85,7 @@ and needs no Composer step, but SAML sign-in is a real package — run
 does). Everything else works without ever running Composer.
 
 ```bash
-git clone https://github.com/<org>/tickethub.git tickethub && cd tickethub
+git clone https://github.com/iamtherealtim/tickethub.git tickethub && cd tickethub
 composer install --no-dev           # optional — only needed for SAML sign-in
 cp env.production.example .env      # then edit: baseURL, database.default.*
 php spark key:generate              # writes encryption.key into .env
