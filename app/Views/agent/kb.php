@@ -43,7 +43,7 @@ $qs = static fn (string $c): string => http_build_query(array_filter(['cat' => $
       <a href="<?= site_url('app/kb/' . $a['id']) ?>" class="text-left bg-white border border-line rounded-xl shadow-card p-4 hover:border-[#CBD1DC] transition">
         <div class="flex items-center gap-2 mb-2">
           <span class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint"><?= esc($a['category']) ?></span>
-          <?php if ($a['status'] === 'Draft'): ?><span class="inline-flex items-center h-[18px] px-1.5 rounded bg-signal-50 text-signal text-[10px] font-bold uppercase">Draft</span><?php endif ?>
+          <?php if ($a['status'] === 'Draft'): ?><span class="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-signal-50 text-signal text-[10px] font-bold uppercase">Draft</span><?php endif ?>
         </div>
         <h3 class="font-display text-[15px] font-semibold text-ink leading-snug"><?= esc($a['title']) ?></h3>
         <div class="flex items-center gap-3 mt-3 text-[11.5px] text-faint font-mono">

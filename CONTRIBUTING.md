@@ -43,6 +43,29 @@ Useful commands while developing:
 | `composer test` | PHPUnit |
 | `composer cs` / `composer cs:fix` | Coding style check / fix |
 | `find app tests -name '*.php' -exec php -l {} \; \| grep -v 'No syntax errors'` | Syntax check (what CI's lint job runs) |
+| `npm run build:css` / `npm run watch:css` | Rebuild the stylesheet once / on every save |
+
+### Styles
+
+The UI uses [Tailwind CSS v4](https://tailwindcss.com). The compiled
+stylesheet, `public/assets/css/tailwind.css`, is committed, so running or
+deploying TicketHub never needs Node. You only need Node 20+ when you change
+the markup:
+
+```bash
+npm ci                 # once
+npm run watch:css      # while editing views, helpers or public/assets/js
+```
+
+Commit the rebuilt `public/assets/css/tailwind.css` along with your change;
+CI rebuilds it and fails if the committed copy is stale.
+
+The source is `resources/css/app.css`. It holds the design tokens (RGB
+triplets on `:root`, flipped for dark mode), the theme that maps Tailwind
+colours onto them, and the few hand-written rules. Use the palette
+(`text-ink`, `bg-canvas`, `border-line`, `text-brand`, …) rather than
+Tailwind's default colours or `dark:` variants: the tokens already switch
+with the theme.
 
 ## Coding style
 

@@ -98,8 +98,8 @@ $canPost = $canPost ?? false;
                 . '</div><span class="text-[10.5px] text-faint">' . $v['day'] . '</span></div>';
         }
         echo th_card(th_card_head(esc(lang('Dashboard.volume.title')),
-            '<span class="flex items-center gap-1.5 text-muted"><i class="w-2 h-2 rounded-sm bg-ink-600"></i>' . esc(lang('Dashboard.volume.created')) . '</span>'
-            . '<span class="flex items-center gap-1.5 text-muted"><i class="w-2 h-2 rounded-sm bg-brand-100"></i>' . esc(lang('Dashboard.volume.resolved')) . '</span>')
+            '<span class="flex items-center gap-1.5 text-muted"><i class="w-2 h-2 rounded-xs bg-ink-600"></i>' . esc(lang('Dashboard.volume.created')) . '</span>'
+            . '<span class="flex items-center gap-1.5 text-muted"><i class="w-2 h-2 rounded-xs bg-brand-100"></i>' . esc(lang('Dashboard.volume.resolved')) . '</span>')
             . '<div class="p-4 flex gap-1 items-end">' . $bars . '</div>');
       ?>
     </div>

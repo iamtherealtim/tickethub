@@ -52,7 +52,7 @@
 </div>
 
 <div id="modalRoot"></div>
-<div id="toastRoot" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[90] flex flex-col items-center gap-2"></div>
+<div id="toastRoot" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-90 flex flex-col items-center gap-2"></div>
 
 <template id="tpl-userMenu">
   <div data-modal-title="<?= esc(lang('Nav.menu.account'), 'attr') ?>" data-modal-sub="<?= esc(lang('Nav.menu.signedInAsName', ['name' => $me['name']]), 'attr') ?>" data-modal-width="max-w-md">

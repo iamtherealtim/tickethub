@@ -55,7 +55,7 @@
         <span class="flex items-center gap-2.5 flex-1 min-w-0">
           <span class="w-8 h-8 rounded-lg bg-canvas border border-line grid place-items-center text-muted shrink-0"><?= th_icon(TH_ASSET_ICON[$a['type']] ?? 'server', 'w-4 h-4') ?></span>
           <span class="min-w-0"><span class="flex items-center gap-1.5 text-[13px] font-medium text-ink"><span class="truncate"><?= esc($a['name']) ?></span>
-            <?php if (! empty($a['pdq_device_id'])): ?><span class="inline-flex items-center h-[16px] px-1 rounded bg-violet-50 text-violet text-[9.5px] font-bold uppercase tracking-wide shrink-0" title="Synced from PDQ Connect">PDQ</span><?php endif ?></span>
+            <?php if (! empty($a['pdq_device_id'])): ?><span class="inline-flex items-center h-[16px] px-1 rounded-sm bg-violet-50 text-violet text-[9.5px] font-bold uppercase tracking-wide shrink-0" title="Synced from PDQ Connect">PDQ</span><?php endif ?></span>
           <span class="block font-mono text-[11px] text-faint truncate"><?= esc($a['tag']) ?> · <?= esc($a['serial']) ?></span></span>
         </span>
         <span class="w-[90px] text-[12.5px] text-muted"><?= esc($a['type']) ?></span>

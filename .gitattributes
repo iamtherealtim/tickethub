@@ -24,6 +24,8 @@ spark  text eol=lf
 system/**            linguist-vendored
 public/assets/**     linguist-vendored
 composer.lock        -diff
+package-lock.json    -diff
+public/assets/css/tailwind.css linguist-generated -diff
 northgate-service-desk.html linguist-documentation
 
 # Files that should not ship in `git archive` exports

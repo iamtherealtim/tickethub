@@ -14,13 +14,13 @@ $epFields = static function (array $ep = []) use ($inputCls) {
         . '</div>'
         . '<div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Events</label>'
         . '<div class="grid gap-y-1.5 rounded-lg border border-line bg-canvas p-3">'
-        . '<label class="inline-flex items-center gap-2 text-[12.5px] font-semibold text-ink"><input type="checkbox" name="events[]" value="*" ' . ($all ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line"> All events</label>';
+        . '<label class="inline-flex items-center gap-2 text-[12.5px] font-semibold text-ink"><input type="checkbox" name="events[]" value="*" ' . ($all ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line"> All events</label>';
     foreach (Webhooks::EVENTS as $k => $label) {
-        $html .= '<label class="inline-flex items-center gap-2 text-[12.5px] text-ink-500"><input type="checkbox" name="events[]" value="' . $k . '" ' . (in_array($k, $subscribed, true) ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line"> <span class="font-mono text-[11.5px] text-faint">' . $k . '</span> ' . esc($label) . '</label>';
+        $html .= '<label class="inline-flex items-center gap-2 text-[12.5px] text-ink-500"><input type="checkbox" name="events[]" value="' . $k . '" ' . (in_array($k, $subscribed, true) ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line"> <span class="font-mono text-[11.5px] text-faint">' . $k . '</span> ' . esc($label) . '</label>';
     }
     $html .= '</div></div>';
     if ($ep) {
-        $html .= '<label class="inline-flex items-center gap-2 text-[12.5px] text-ink-500"><input type="checkbox" name="rotate_secret" value="1" class="w-[15px] h-[15px] rounded border-line"> Rotate the signing secret (shown once after saving)</label>';
+        $html .= '<label class="inline-flex items-center gap-2 text-[12.5px] text-ink-500"><input type="checkbox" name="rotate_secret" value="1" class="w-[15px] h-[15px] rounded-sm border-line"> Rotate the signing secret (shown once after saving)</label>';
     }
 
     return $html . '</div>';
@@ -36,7 +36,7 @@ foreach ($endpoints as $ep) {
     $streak = (int) $ep['failures'];
     $rows .= '<div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-line last:border-0">'
         . '<div class="flex-1 min-w-0"><div class="text-[13px] font-medium ' . ((int) $ep['active'] ? 'text-ink' : 'text-faint') . '">' . esc($ep['name'])
-        . ($streak >= Webhooks::DISABLE_AFTER ? ' <span class="inline-flex items-center gap-1 h-[20px] px-1.5 rounded border text-[11px] font-semibold bg-alert-50 text-alert border-alert-100">auto-disabled</span>' : '') . '</div>'
+        . ($streak >= Webhooks::DISABLE_AFTER ? ' <span class="inline-flex items-center gap-1 h-[20px] px-1.5 rounded-sm border text-[11px] font-semibold bg-alert-50 text-alert border-alert-100">auto-disabled</span>' : '') . '</div>'
         . '<div class="font-mono text-[11.5px] text-faint truncate">' . esc($ep['url']) . '</div>'
         . '<div class="text-[11.5px] text-muted mt-0.5">' . (in_array('*', $events, true) ? 'All events' : esc(implode(', ', $events))) . '</div></div>'
         . '<span class="w-[150px] text-[12px] text-muted">' . ($ep['last_delivered_at'] ? 'delivered ' . th_rel($ep['last_delivered_at']) : 'never delivered')
@@ -67,10 +67,10 @@ foreach ($deliveries as $d) {
     $ok = $d['delivered_at'] !== null;
     $pending = ! $ok && $d['next_attempt_at'] !== null;
     $chip = $ok
-        ? '<span class="inline-flex items-center h-[18px] px-1.5 rounded bg-brand-50 text-brand text-[10px] font-bold uppercase tracking-wide">Delivered</span>'
+        ? '<span class="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-brand-50 text-brand text-[10px] font-bold uppercase tracking-wide">Delivered</span>'
         : ($pending
-            ? '<span class="inline-flex items-center h-[18px] px-1.5 rounded bg-signal-50 text-signal text-[10px] font-bold uppercase tracking-wide">Retrying</span>'
-            : '<span class="inline-flex items-center h-[18px] px-1.5 rounded bg-alert-50 text-alert text-[10px] font-bold uppercase tracking-wide">Failed</span>');
+            ? '<span class="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-signal-50 text-signal text-[10px] font-bold uppercase tracking-wide">Retrying</span>'
+            : '<span class="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-alert-50 text-alert text-[10px] font-bold uppercase tracking-wide">Failed</span>');
     $dRows .= '<div class="flex flex-wrap md:flex-nowrap items-center gap-3 px-4 py-2 border-b border-line last:border-0">'
         . '<span class="w-[130px] font-mono text-[11.5px] text-muted shrink-0">' . th_date($d['created_at']) . '</span>'
         . '<span class="shrink-0 w-[76px]">' . $chip . '</span>'
@@ -93,14 +93,14 @@ echo '<form method="post" action="' . site_url('app/admin/webhooks/outbound-poli
         . '<span class="w-8 h-8 rounded-lg bg-canvas border border-line grid place-items-center text-muted">' . th_icon('shield', 'w-4 h-4') . '</span>'
         . '<div class="flex-1 min-w-[260px]"><div class="text-[13px] font-medium text-ink">Allow integrations to reach private networks</div>'
         . '<div class="text-[12px] text-muted">Off by default: webhooks, automation webhooks and PDQ may only call public internet addresses. Turn on only if a target lives on your internal network. Loopback and cloud-metadata addresses stay blocked either way.</div></div>'
-        . '<label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="outbound_allow_private" value="1" ' . ($allowPrivate ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line"> Allow</label>'
+        . '<label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="outbound_allow_private" value="1" ' . ($allowPrivate ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line"> Allow</label>'
         . '<button type="submit" class="h-8 px-3 rounded-lg bg-brand hover:bg-brand-600 text-white text-[12.5px] font-semibold">Save</button>'
         . '</div>')
     . '</form>';
 ?>
 
 <template id="tpl-addWebhook">
-  <form method="post" action="<?= site_url('app/admin/webhooks') ?>" data-modal-title="New webhook" data-modal-width="max-w-[58rem]" data-submit="Create webhook">
+  <form method="post" action="<?= site_url('app/admin/webhooks') ?>" data-modal-title="New webhook" data-modal-width="max-w-232" data-submit="Create webhook">
     <?= csrf_field() ?>
     <?= $epFields() ?>
   </form>
@@ -108,7 +108,7 @@ echo '<form method="post" action="' . site_url('app/admin/webhooks/outbound-poli
 
 <?php foreach ($endpoints as $ep): ?>
 <template id="tpl-editWebhook-<?= $ep['id'] ?>">
-  <div data-modal-title="Edit <?= esc($ep['name'], 'attr') ?>" data-modal-width="max-w-[58rem]" data-submit="Save">
+  <div data-modal-title="Edit <?= esc($ep['name'], 'attr') ?>" data-modal-width="max-w-232" data-submit="Save">
     <form method="post" action="<?= site_url('app/admin/webhooks/' . $ep['id']) ?>" data-primary>
       <?= csrf_field() ?>
       <?= $epFields($ep) ?>

@@ -20,7 +20,7 @@
         <div class="mt-8 space-y-3">
           <?php foreach ([['inbox', lang('Auth.login.feature1')], ['clock', lang('Auth.login.feature2')], ['book', lang('Auth.login.feature3')]] as [$ic, $line]): ?>
           <div class="flex items-center gap-3 text-[13px] text-[#C7CDD8]">
-            <span class="w-8 h-8 rounded-lg bg-white/[.06] border border-white/10 grid place-items-center text-brand-100"><?= th_icon($ic, 'w-4 h-4') ?></span><?= esc($line) ?>
+            <span class="w-8 h-8 rounded-lg bg-white/6 border border-white/10 grid place-items-center text-brand-100"><?= th_icon($ic, 'w-4 h-4') ?></span><?= esc($line) ?>
           </div>
           <?php endforeach ?>
         </div>
@@ -60,7 +60,7 @@
             class="w-full h-10 px-3 rounded-lg border border-line bg-white text-[14px] placeholder:text-faint focus:border-brand">
         </div>
         <label class="flex items-center gap-2 text-[13px] text-ink-500 cursor-pointer">
-          <input type="checkbox" name="remember" value="1" class="w-[15px] h-[15px] rounded border-line"> <?= lang('Auth.login.remember') ?>
+          <input type="checkbox" name="remember" value="1" class="w-[15px] h-[15px] rounded-sm border-line"> <?= lang('Auth.login.remember') ?>
         </label>
         <button type="submit" class="w-full h-10 rounded-lg bg-brand hover:bg-brand-600 text-white text-[14px] font-semibold transition"><?= lang('Auth.login.submit') ?></button>
       </form>

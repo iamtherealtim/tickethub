@@ -10,10 +10,9 @@ use CodeIgniter\HTTP\ResponseInterface;
  * Content-Security-Policy and HSTS on every response.
  *
  * The CSP is a pragmatic one: the UI is server-rendered with inline scripts
- * and Tailwind's CDN build (which injects styles at runtime), so
- * 'unsafe-inline' stays for scripts and styles. It still restricts where
- * script and style code may be loaded FROM (this site plus the two CDNs in
- * use), forbids plugins, pins <base>, limits form posts to this site and
+ * and inline style attributes, so 'unsafe-inline' stays for scripts and
+ * styles. It still restricts where script and style code may be loaded FROM
+ * (this site, Google Fonts and cdnjs), forbids plugins, pins <base>, limits form posts to this site and
  * stops the app being framed elsewhere — all things a stored-HTML bug would
  * otherwise get for free. Output escaping and the HTML sanitizer remain the
  * primary XSS defence; this is the second line.
@@ -26,7 +25,7 @@ use CodeIgniter\HTTP\ResponseInterface;
 class SecurityHeaders implements FilterInterface
 {
     private const CSP = "default-src 'self'; "
-        . "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; "
+        . "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
         . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; "
         . "font-src 'self' https://fonts.gstatic.com data:; "
         . "img-src 'self' data: blob: https:; "

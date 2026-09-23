@@ -10,7 +10,7 @@ $orgFields = static function (array $o = []) use ($inputCls) {
         . '<div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Notes</label>'
         . '<textarea name="notes" rows="2" class="w-full px-2.5 py-2 rounded-lg border border-line text-[12.5px] leading-relaxed focus:border-brand">' . esc($o['notes'] ?? '') . '</textarea></div>'
         . '<label class="sm:col-span-2 inline-flex items-center gap-2 text-[12.5px] text-ink-500">'
-        . '<input type="checkbox" name="auto_assign" value="1" checked class="w-[15px] h-[15px] rounded border-line">'
+        . '<input type="checkbox" name="auto_assign" value="1" checked class="w-[15px] h-[15px] rounded-sm border-line">'
         . 'Auto-assign by email domain on save — attaches every person with a matching email who is not in an organization yet</label>'
         . '</div>';
 };

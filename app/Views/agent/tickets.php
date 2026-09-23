@@ -47,7 +47,7 @@ $qs = static function (array $overrides) use ($f, $view) {
         <?php if ((int) $sv['user_id'] === (int) $me['id']): ?>
         <form method="post" action="<?= site_url('app/tickets/views/' . $sv['id'] . '/delete') ?>" class="absolute right-1">
           <?= csrf_field() ?>
-          <button type="submit" title="Remove view" class="w-4 h-4 grid place-items-center rounded text-faint opacity-0 group-hover:opacity-100 hover:text-alert transition"><?= th_icon('x', 'w-3 h-3') ?></button>
+          <button type="submit" title="Remove view" class="w-4 h-4 grid place-items-center rounded-sm text-faint opacity-0 group-hover:opacity-100 hover:text-alert transition"><?= th_icon('x', 'w-3 h-3') ?></button>
         </form>
         <?php endif ?>
       </span>
@@ -111,7 +111,7 @@ $qs = static function (array $overrides) use ($f, $view) {
 
     <!-- header row -->
     <div class="flex items-center gap-3 px-4 h-9 bg-canvas border-b border-line text-[11px] font-semibold uppercase tracking-[.09em] text-faint">
-      <input type="checkbox" data-check-all class="w-[15px] h-[15px] rounded border-line" aria-label="Select all">
+      <input type="checkbox" data-check-all class="w-[15px] h-[15px] rounded-sm border-line" aria-label="Select all">
       <span class="flex-1">Ticket · <span class="font-mono normal-case tracking-normal"><?= $total ?></span> results</span>
       <span class="hidden xl:block w-[150px]">Requester</span>
       <span class="hidden sm:block w-[86px]">Status</span>
@@ -139,12 +139,12 @@ $qs = static function (array $overrides) use ($f, $view) {
       ?>
       <div data-row class="relative border-b border-line row-hover">
         <div class="flex items-center gap-3 px-4 py-2.5">
-          <input type="checkbox" data-check="<?= $t['id'] ?>" class="w-[15px] h-[15px] rounded border-line shrink-0" aria-label="Select <?= esc($t['code'], 'attr') ?>">
+          <input type="checkbox" data-check="<?= $t['id'] ?>" class="w-[15px] h-[15px] rounded-sm border-line shrink-0" aria-label="Select <?= esc($t['code'], 'attr') ?>">
           <i class="led <?= TH_PRIORITY[$t['priority']]['dot'] ?? 'bg-[#98A1B0]' ?>" title="<?= esc($t['priority'], 'attr') ?> priority"></i>
           <a href="<?= site_url('app/tickets/' . $t['code']) ?>" class="min-w-0 flex-1 text-left">
             <div class="flex items-center gap-2">
               <span class="font-mono text-[11px] text-faint"><?= esc($t['code']) ?></span>
-              <?php if ((int) $t['escalated']): ?><span class="inline-flex items-center gap-1 h-[17px] px-1.5 rounded bg-alert-50 text-alert text-[10px] font-bold uppercase tracking-wide">Escalated</span><?php endif ?>
+              <?php if ((int) $t['escalated']): ?><span class="inline-flex items-center gap-1 h-[17px] px-1.5 rounded-sm bg-alert-50 text-alert text-[10px] font-bold uppercase tracking-wide">Escalated</span><?php endif ?>
               <span class="text-[13.5px] font-medium text-ink truncate"><?= esc($t['subject']) ?></span>
             </div>
             <div class="flex items-center gap-2 mt-1 text-[11.5px] text-faint">
@@ -190,7 +190,7 @@ $qs = static function (array $overrides) use ($f, $view) {
     <div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Name<span class="text-alert"> *</span></label>
       <input name="name" required maxlength="40" placeholder="e.g. My urgent network tickets" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
     <label class="flex items-center gap-2 mt-3 text-[12.5px] text-ink-500">
-      <input type="checkbox" name="shared" value="1" class="w-[15px] h-[15px] rounded border-line">
+      <input type="checkbox" name="shared" value="1" class="w-[15px] h-[15px] rounded-sm border-line">
       Share with the whole team
     </label>
   </form>

@@ -116,7 +116,7 @@ $canReply = $open || $reopenWindow;
           data-editor data-toolbar="light"
           data-preview-url="<?= site_url('portal/preview') ?>"
           data-upload-url="<?= site_url('portal/tickets/' . $t['code'] . '/inline-image') ?>"
-          class="w-full text-[13.5px] leading-relaxed resize-y border-0 focus:ring-0 outline-none placeholder:text-faint bg-transparent"></textarea>
+          class="w-full text-[13.5px] leading-relaxed resize-y border-0 focus:ring-0 outline-hidden placeholder:text-faint bg-transparent"></textarea>
       </div>
       <div class="flex items-center gap-2 mt-2">
         <label class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-line text-[12.5px] text-muted hover:bg-canvas cursor-pointer">

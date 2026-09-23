@@ -135,7 +135,7 @@ $orgSelect = static function (?int $current) use ($orgs) {
               // A queue with nobody active still collects routed tickets, and its
               // SLA warnings have no one to reach. Say so where groups are managed.
               $unstaffed = ! $members
-                  ? '<span class="inline-flex items-center gap-1 h-[20px] px-1.5 rounded border text-[11px] font-semibold bg-alert-50 text-alert border-alert-100" title="No active agent belongs to this group">' . th_icon('warn', 'w-3 h-3') . 'Unstaffed</span>'
+                  ? '<span class="inline-flex items-center gap-1 h-[20px] px-1.5 rounded-sm border text-[11px] font-semibold bg-alert-50 text-alert border-alert-100" title="No active agent belongs to this group">' . th_icon('warn', 'w-3 h-3') . 'Unstaffed</span>'
                   : '';
 
               return '<div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-line last:border-0">'
@@ -194,7 +194,7 @@ $orgSelect = static function (?int $current) use ($orgs) {
             . '<div class="flex-1 min-w-[220px]"><div class="text-[13px] font-medium text-ink">Balance new tickets across the team</div>'
             . '<div class="text-[12px] text-muted">When a rule names a team but not a person, give the ticket to whoever has fewest open. Off means it stays unassigned.</div></div>'
             . '<label class="inline-flex items-center gap-2 text-[12.5px] text-ink-500">'
-            . '<input type="checkbox" name="auto_assign" value="1" ' . (($settings['auto_assign'] ?? '0') === '1' ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line">'
+            . '<input type="checkbox" name="auto_assign" value="1" ' . (($settings['auto_assign'] ?? '0') === '1' ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line">'
             . 'Enabled</label>'
             . '</div>') ?>
       </form>
@@ -258,7 +258,7 @@ $orgSelect = static function (?int $current) use ($orgs) {
         <?= th_card('<div class="flex flex-wrap items-center gap-3 p-4">'
             . '<span class="w-8 h-8 rounded-lg bg-canvas border border-line grid place-items-center text-signal">' . th_icon('play', 'w-4 h-4') . '</span>'
             . '<div class="flex-1 min-w-[220px]"><div class="text-[13px] font-medium text-ink">Rule runner</div>'
-            . '<div class="text-[12px] text-muted">Schedule <code class="font-mono text-[11.5px] bg-canvas border border-line rounded px-1.5 py-0.5">php spark tickets:cron</code> every 5–15 minutes (Task Scheduler or cron). The button runs the same pass immediately.</div></div>'
+            . '<div class="text-[12px] text-muted">Schedule <code class="font-mono text-[11.5px] bg-canvas border border-line rounded-sm px-1.5 py-0.5">php spark tickets:cron</code> every 5–15 minutes (Task Scheduler or cron). The button runs the same pass immediately.</div></div>'
             . th_btn('Run now', 'type="submit"', 'brand', 'zap')
             . '</div>') ?>
       </form>
@@ -323,8 +323,8 @@ $orgSelect = static function (?int $current) use ($orgs) {
         $logRows = '';
         foreach ($autoLog as $row) {
             $chip = $row['kind'] === 'routing'
-                ? '<span class="inline-flex items-center h-[18px] px-1.5 rounded bg-violet-50 text-violet text-[10px] font-bold uppercase tracking-wide">Routing</span>'
-                : '<span class="inline-flex items-center h-[18px] px-1.5 rounded bg-signal-50 text-signal text-[10px] font-bold uppercase tracking-wide">Rule</span>';
+                ? '<span class="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-violet-50 text-violet text-[10px] font-bold uppercase tracking-wide">Routing</span>'
+                : '<span class="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-signal-50 text-signal text-[10px] font-bold uppercase tracking-wide">Rule</span>';
             $logRows .= '<div class="flex flex-wrap md:flex-nowrap items-center gap-3 px-4 py-2 border-b border-line last:border-0">'
                 . '<span class="w-[130px] font-mono text-[11.5px] text-muted shrink-0">' . th_date($row['created_at']) . '</span>'
                 . '<span class="shrink-0 w-[64px]">' . $chip . '</span>'
@@ -404,7 +404,7 @@ $orgSelect = static function (?int $current) use ($orgs) {
             . '<div class="p-4 grid sm:grid-cols-2 gap-3.5">'
 
             . '<label class="sm:col-span-2 flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">'
-            . '<input type="checkbox" name="mail_enabled" value="1" ' . (($settings['mail_enabled'] ?? '0') === '1' ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line">'
+            . '<input type="checkbox" name="mail_enabled" value="1" ' . (($settings['mail_enabled'] ?? '0') === '1' ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line">'
             . '<span class="text-[13px] font-medium text-ink">Send notification emails</span>'
             . '<span class="text-[12px] text-muted">— ticket created, replies, resolution, assignment</span></label>'
 
@@ -457,7 +457,7 @@ $orgSelect = static function (?int $current) use ($orgs) {
             th_card_head('Microsoft 365 mailbox (Graph API)', '<span class="' . ($graphOn ? 'text-brand' : 'text-faint') . ' font-semibold">' . ($graphOn ? 'Enabled' : 'Disabled') . '</span>')
             . '<div class="p-4 space-y-3">'
             . '<label class="flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">'
-            . '<input type="checkbox" name="graph_inbound_enabled" value="1" ' . ($graphOn ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line">'
+            . '<input type="checkbox" name="graph_inbound_enabled" value="1" ' . ($graphOn ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line">'
             . '<span class="text-[13px] font-medium text-ink">Poll a shared mailbox and turn unread email into tickets</span></label>'
             . '<div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Mailbox address</label>'
             . '<input name="graph_mailbox" type="email" value="' . esc($settings['graph_mailbox'] ?? '', 'attr') . '" placeholder="servicedesk@yourcompany.com" class="' . $inputCls . '"></div>'
@@ -465,9 +465,9 @@ $orgSelect = static function (?int $current) use ($orgs) {
             . 'Uses the app registration from <a href="' . site_url('app/admin/sso') . '" class="font-semibold underline">Single sign-on</a>'
             . ($ssoCredsPresent ? ' <span class="text-brand font-medium">(credentials present)</span>' : ' <span class="text-alert font-medium">(tenant/client/secret not set yet)</span>') . '.'
             . '<ol class="list-decimal ml-4 mt-1.5 space-y-1">'
-            . '<li>API permissions → add <b>Application</b> permission <code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5">Mail.ReadWrite</code> → Grant admin consent.</li>'
+            . '<li>API permissions → add <b>Application</b> permission <code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5">Mail.ReadWrite</code> → Grant admin consent.</li>'
             . '<li>Recommended: restrict the app to this mailbox with an Exchange <i>application access policy</i>.</li>'
-            . '<li>Polling runs with <code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5">php spark tickets:cron</code>; processed mail is marked read. Senders must match a TicketHub account; subjects with an INC-/SR- code append to that ticket.</li>'
+            . '<li>Polling runs with <code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5">php spark tickets:cron</code>; processed mail is marked read. Senders must match a TicketHub account; subjects with an INC-/SR- code append to that ticket.</li>'
             . '</ol></div>'
             . '<div class="flex items-center gap-2">'
             . '<button type="submit" class="h-9 px-3.5 rounded-lg bg-brand hover:bg-brand-600 text-white text-[13px] font-semibold">Save</button>'
@@ -491,12 +491,12 @@ $orgSelect = static function (?int $current) use ($orgs) {
             th_card_head('Inbound email → tickets', '<span class="' . ($inboundOn ? 'text-brand' : 'text-faint') . ' font-semibold">' . ($inboundOn ? 'Enabled' : 'Disabled') . '</span>')
             . '<div class="p-4 space-y-3">'
             . '<label class="flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">'
-            . '<input type="checkbox" name="inbound_email_enabled" value="1" ' . ($inboundOn ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line">'
+            . '<input type="checkbox" name="inbound_email_enabled" value="1" ' . ($inboundOn ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line">'
             . '<span class="text-[13px] font-medium text-ink">Accept email through the inbound webhook</span></label>'
             . '<div class="rounded-lg border border-line bg-canvas p-3 text-[12.5px] text-ink-500 leading-relaxed">'
             . 'Point your mail provider\'s inbound parse (Mailgun routes, SendGrid inbound, Postmark) at:'
-            . '<div class="mt-1.5"><code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5 select-all">POST ' . site_url('api/inbound-email') . '</code></div>'
-            . '<div class="mt-1.5">Header <code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5">X-Inbound-Secret: ' . esc($settings['inbound_email_secret'] ?? '') . '</code></div>'
+            . '<div class="mt-1.5"><code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5 select-all">POST ' . site_url('api/inbound-email') . '</code></div>'
+            . '<div class="mt-1.5">Header <code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5">X-Inbound-Secret: ' . esc($settings['inbound_email_secret'] ?? '') . '</code></div>'
             . '<div class="mt-1.5">JSON body: <code class="font-mono text-[11.5px]">{"from","subject","text"}</code>. A subject containing an existing INC-/SR- code appends a reply (and reopens if needed); anything else opens a new incident for the matched sender.</div>'
             . '</div>'
             . '<div class="grid sm:grid-cols-2 gap-3">'
@@ -576,7 +576,7 @@ $orgSelect = static function (?int $current) use ($orgs) {
             . '<div class="p-4 grid sm:grid-cols-2 gap-3.5">'
 
             . '<label class="sm:col-span-2 flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">'
-            . '<input type="checkbox" name="pdq_enabled" value="1" ' . ($pdqOn ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line">'
+            . '<input type="checkbox" name="pdq_enabled" value="1" ' . ($pdqOn ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line">'
             . '<span class="text-[13px] font-medium text-ink">Pull the PDQ Connect device inventory into Assets</span></label>'
 
             . '<div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">API key</label>'
@@ -587,9 +587,9 @@ $orgSelect = static function (?int $current) use ($orgs) {
             . '<p class="text-[11.5px] text-faint mt-1">Leave the default unless PDQ changes their API host.</p></div>'
 
             . '<label class="sm:col-span-2 flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">'
-            . '<input type="checkbox" name="pdq_auto_sync" value="1" ' . (($settings['pdq_auto_sync'] ?? '0') === '1' ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line">'
+            . '<input type="checkbox" name="pdq_auto_sync" value="1" ' . (($settings['pdq_auto_sync'] ?? '0') === '1' ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line">'
             . '<span class="text-[13px] font-medium text-ink">Auto-sync hourly</span>'
-            . '<span class="text-[12px] text-muted">— runs inside <code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5">php spark tickets:cron</code></span></label>'
+            . '<span class="text-[12px] text-muted">— runs inside <code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5">php spark tickets:cron</code></span></label>'
 
             . '<div class="sm:col-span-2 rounded-lg border border-line bg-canvas p-3 text-[12.5px] text-ink-500 leading-relaxed">'
             . 'Devices are matched to existing assets by previous sync id, then serial number, then hostname — nothing is deleted, and assignments/sites you set by hand are kept. New devices arrive as assets tagged with a PDQ badge.'
@@ -650,7 +650,7 @@ $orgSelect = static function (?int $current) use ($orgs) {
             . '<div class="p-4 grid sm:grid-cols-2 gap-3.5">'
 
             . '<label class="sm:col-span-2 flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">'
-            . '<input type="checkbox" name="azure_enabled" value="1" ' . ($azureOn ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line">'
+            . '<input type="checkbox" name="azure_enabled" value="1" ' . ($azureOn ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line">'
             . '<span class="text-[13px] font-medium text-ink">Show &ldquo;Sign in with Microsoft&rdquo; on the login page</span></label>'
 
             . '<div><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Directory (tenant) ID</label>'
@@ -663,7 +663,7 @@ $orgSelect = static function (?int $current) use ($orgs) {
             . '<input name="azure_client_secret" type="password" value="" placeholder="' . (($settings['azure_client_secret'] ?? '') !== '' ? '•••••••• (saved — leave blank to keep)' : 'Value from Certificates & secrets') . '" autocomplete="new-password" class="' . $inputCls . '"></div>'
 
             . '<label class="sm:col-span-2 flex items-center gap-2.5 rounded-lg border border-line bg-canvas p-3 cursor-pointer">'
-            . '<input type="checkbox" name="azure_autoprovision" value="1" ' . (($settings['azure_autoprovision'] ?? '1') === '1' ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded border-line">'
+            . '<input type="checkbox" name="azure_autoprovision" value="1" ' . (($settings['azure_autoprovision'] ?? '1') === '1' ? 'checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line">'
             . '<span class="text-[13px] font-medium text-ink">Create an account on first sign-in</span>'
             . '<span class="text-[12px] text-muted">— new people join as Requesters unless a group below matches; promote them under Agents &amp; roles</span></label>'
 
@@ -678,7 +678,7 @@ $orgSelect = static function (?int $current) use ($orgs) {
             . '<div class="text-[11px] font-semibold uppercase tracking-[.09em] text-faint mb-1.5">App registration checklist</div>'
             . '<ol class="text-[12.5px] text-ink-500 leading-relaxed list-decimal ml-4 space-y-1">'
             . '<li>Azure Portal → Entra ID → App registrations → New registration.</li>'
-            . '<li>Add a <b>Web</b> redirect URI: <code class="font-mono text-[11.5px] bg-white border border-line rounded px-1.5 py-0.5 select-all">' . site_url('auth/azure/callback') . '</code></li>'
+            . '<li>Add a <b>Web</b> redirect URI: <code class="font-mono text-[11.5px] bg-white border border-line rounded-sm px-1.5 py-0.5 select-all">' . site_url('auth/azure/callback') . '</code></li>'
             . '<li>Certificates &amp; secrets → new client secret → paste its <b>Value</b> above.</li>'
             . '<li>API permissions: <span class="font-mono text-[11.5px]">User.Read</span> (delegated) — granted by default.</li>'
             . '<li>For role mapping: Token configuration → Add groups claim → <b>Security groups</b>, emitted as <b>Group ID</b> in the ID token.</li>'
@@ -1042,8 +1042,8 @@ window.THAUTO = {
       <div class="sm:col-span-2"><label class="block text-[12px] font-medium text-ink-500 mb-1.5">Dropdown options</label>
         <input name="options" value="<?= esc(implode(', ', json_decode($f['options'] ?? '[]', true) ?: []), 'attr') ?>" placeholder="Comma separated" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand"></div>
       <div class="sm:col-span-2 flex items-center gap-5">
-        <label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="agents" value="1" <?= $f['agents'] ? 'checked' : '' ?> class="w-[15px] h-[15px] rounded border-line"> Agents</label>
-        <label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="portal" value="1" <?= $f['portal'] ? 'checked' : '' ?> class="w-[15px] h-[15px] rounded border-line"> Portal</label>
+        <label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="agents" value="1" <?= $f['agents'] ? 'checked' : '' ?> class="w-[15px] h-[15px] rounded-sm border-line"> Agents</label>
+        <label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="portal" value="1" <?= $f['portal'] ? 'checked' : '' ?> class="w-[15px] h-[15px] rounded-sm border-line"> Portal</label>
       </div>
     </div>
   </form>
@@ -1190,8 +1190,8 @@ $routeFields = static function (array $r, array $groups, array $agents) {
         <input name="options" placeholder="Comma separated — e.g. Wi-Fi, VPN, Email" class="w-full h-9 px-2.5 rounded-lg border border-line text-[13px] focus:border-brand">
         <p class="text-[11.5px] text-faint mt-1">Only used for Dropdown/Lookup types.</p></div>
       <div class="sm:col-span-2 flex items-center gap-5">
-        <label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="agents" value="1" checked class="w-[15px] h-[15px] rounded border-line"> Agent form</label>
-        <label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="portal" value="1" class="w-[15px] h-[15px] rounded border-line"> Portal form</label>
+        <label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="agents" value="1" checked class="w-[15px] h-[15px] rounded-sm border-line"> Agent form</label>
+        <label class="inline-flex items-center gap-2 text-[13px] text-ink-500"><input type="checkbox" name="portal" value="1" class="w-[15px] h-[15px] rounded-sm border-line"> Portal form</label>
       </div>
     </div>
   </form>

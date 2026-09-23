@@ -57,7 +57,7 @@
           $html = '';
           foreach ($data as $k => $v) {
               $html .= '<div class="flex items-center gap-3"><span class="text-[12.5px] text-ink-500 w-[110px] truncate">' . esc($k) . '</span>'
-                  . '<div class="flex-1 h-5 rounded bg-canvas overflow-hidden"><div class="h-full bg-brand rounded" style="width:' . ($v / $max) * 100 . '%"></div></div>'
+                  . '<div class="flex-1 h-5 rounded-sm bg-canvas overflow-hidden"><div class="h-full bg-brand rounded-sm" style="width:' . ($v / $max) * 100 . '%"></div></div>'
                   . '<span class="font-mono text-[12px] text-muted w-[52px] text-right">' . th_minutes((int) $v) . '</span></div>';
           }
 
@@ -75,7 +75,7 @@
       $srcHtml = '';
       foreach ($srcs as $k => $v) {
           $srcHtml .= '<div class="flex items-center gap-3"><span class="text-[12.5px] text-ink-500 w-[74px]">' . esc($k) . '</span>'
-              . '<div class="flex-1 h-5 rounded bg-canvas overflow-hidden"><div class="h-full bg-ink-600 rounded" style="width:' . ($v / $maxSrc) * 100 . '%"></div></div>'
+              . '<div class="flex-1 h-5 rounded-sm bg-canvas overflow-hidden"><div class="h-full bg-ink-600 rounded-sm" style="width:' . ($v / $maxSrc) * 100 . '%"></div></div>'
               . '<span class="font-mono text-[12px] text-muted w-6 text-right">' . $v . '</span></div>';
       }
       echo th_card(th_card_head('Where tickets come from') . '<div class="p-4 space-y-2.5">' . $srcHtml . '</div>');
@@ -93,7 +93,7 @@
           $dash = $frac * 339.3;
           $arcs .= '<circle cx="60" cy="60" r="54" fill="none" stroke="' . $color . '" stroke-width="12"'
               . ' stroke-dasharray="' . $dash . ' ' . (339.3 - $dash) . '" stroke-dashoffset="' . (-$offset) . '" transform="rotate(-90 60 60)"><title>' . esc($k) . ': ' . $v . '</title></circle>';
-          $legend .= '<div class="flex items-center gap-2 text-[12.5px]"><i class="w-2.5 h-2.5 rounded-sm" style="background:' . $color . '"></i>'
+          $legend .= '<div class="flex items-center gap-2 text-[12.5px]"><i class="w-2.5 h-2.5 rounded-xs" style="background:' . $color . '"></i>'
               . '<span class="text-ink-500 flex-1">' . esc($k) . '</span><span class="font-mono text-muted">' . $v . '</span>'
               . '<span class="font-mono text-faint w-9 text-right">' . round($v / $total * 100) . '%</span></div>';
           $offset += $dash;

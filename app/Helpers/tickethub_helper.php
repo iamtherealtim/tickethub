@@ -210,7 +210,7 @@ function th_priority_tag(string $p): string
 
 function th_tag_pill(string $t): string
 {
-    return '<span class="inline-flex items-center h-[20px] px-1.5 rounded bg-[#EFF1F5] text-[11px] text-muted font-mono">' . esc($t) . '</span>';
+    return '<span class="inline-flex items-center h-[20px] px-1.5 rounded-sm bg-[#EFF1F5] text-[11px] text-muted font-mono">' . esc($t) . '</span>';
 }
 
 function th_is_open(array $t): bool
@@ -973,7 +973,7 @@ function th_custom_field(array $f, ?string $value = null): string
 
         case 'Checkbox':
             return '<div class="flex items-center pt-6"><label class="inline-flex items-center gap-2 text-[13px] text-ink-500 cursor-pointer">'
-                . '<input type="checkbox" name="' . $name . '" value="Yes"' . ($value === 'Yes' ? ' checked' : '') . ' class="w-[15px] h-[15px] rounded border-line"> ' . esc($f['label']) . '</label></div>';
+                . '<input type="checkbox" name="' . $name . '" value="Yes"' . ($value === 'Yes' ? ' checked' : '') . ' class="w-[15px] h-[15px] rounded-sm border-line"> ' . esc($f['label']) . '</label></div>';
 
         case 'Date':
             $ctl = '<input name="' . $name . '" type="date"' . $reqAttr . ' value="' . $val . '" class="' . $base . ' font-mono">';
@@ -1075,7 +1075,7 @@ function th_toggle(bool $on, string $action): string
     return '<form method="post" action="' . $action . '" class="inline">' . csrf_field()
         . '<button type="submit" role="switch" aria-checked="' . ($on ? 'true' : 'false') . '"'
         . ' class="w-9 h-[20px] rounded-full transition relative shrink-0 ' . ($on ? 'bg-brand' : 'bg-[#D3D8E0]') . '">'
-        . '<i class="absolute top-[2px] w-4 h-4 rounded-full bg-white shadow transition-all ' . ($on ? 'left-[18px]' : 'left-[2px]') . '"></i>'
+        . '<i class="absolute top-[2px] w-4 h-4 rounded-full bg-white shadow-sm transition-all ' . ($on ? 'left-[18px]' : 'left-[2px]') . '"></i>'
         . '</button></form>';
 }
 

@@ -48,8 +48,8 @@ $canManage = $canManage ?? false;
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-mono text-[11.5px] text-faint"><?= esc($c['code']) ?></span>
-            <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold <?= TH_CHANGE_STATE[$c['state']] ?? 'bg-canvas text-muted border-line' ?>"><?= esc($c['state']) ?></span>
-            <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold <?= TH_RISK[$c['risk']] ?? 'bg-canvas text-muted border-line' ?>"><?= esc($c['risk']) ?> risk</span>
+            <span class="inline-flex items-center h-[20px] px-2 rounded-sm border text-[11px] font-semibold <?= TH_CHANGE_STATE[$c['state']] ?? 'bg-canvas text-muted border-line' ?>"><?= esc($c['state']) ?></span>
+            <span class="inline-flex items-center h-[20px] px-2 rounded-sm border text-[11px] font-semibold <?= TH_RISK[$c['risk']] ?? 'bg-canvas text-muted border-line' ?>"><?= esc($c['risk']) ?> risk</span>
             <span class="text-[11.5px] text-faint"><?= esc($c['type']) ?></span>
           </div>
           <h3 class="font-display text-[15px] font-semibold text-ink mt-1.5"><?= esc($c['title']) ?></h3>

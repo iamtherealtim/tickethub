@@ -8,7 +8,7 @@
   <div class="bg-white border border-line rounded-xl shadow-card p-5 mb-4">
     <div class="flex flex-wrap items-center gap-2">
       <span class="font-mono text-[11.5px] text-faint"><?= esc($p['code']) ?></span>
-      <span class="inline-flex items-center h-[20px] px-2 rounded border text-[11px] font-semibold <?= TH_PROBLEM_STATUS[$p['status']] ?? 'bg-canvas text-muted border-line' ?>"><?= esc($p['status']) ?></span>
+      <span class="inline-flex items-center h-[20px] px-2 rounded-sm border text-[11px] font-semibold <?= TH_PROBLEM_STATUS[$p['status']] ?? 'bg-canvas text-muted border-line' ?>"><?= esc($p['status']) ?></span>
       <?= th_priority_tag($p['priority']) ?>
       <span class="ml-auto flex items-center gap-2">
         <?= th_btn('Edit', 'data-modal="editProblem"', 'ghost', 'edit') ?>

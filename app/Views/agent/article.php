@@ -7,7 +7,7 @@
   <section class="bg-white border border-line rounded-xl shadow-card">
     <article class="p-6">
       <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.09em] text-faint mb-2"><?= esc($a['category']) ?>
-        <?php if ($a['status'] === 'Draft'): ?><span class="px-1.5 rounded bg-signal-50 text-signal">Draft</span><?php endif ?></div>
+        <?php if ($a['status'] === 'Draft'): ?><span class="px-1.5 rounded-sm bg-signal-50 text-signal">Draft</span><?php endif ?></div>
       <h1 class="font-display text-[26px] font-semibold leading-tight"><?= esc($a['title']) ?></h1>
       <div class="flex items-center gap-3 mt-3 pb-4 border-b border-line text-[12px] text-muted">
         <?= th_avatar($author, 24) ?><span><?= esc($author['name'] ?? '—') ?></span><span class="text-line">·</span>
