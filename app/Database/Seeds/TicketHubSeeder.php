@@ -137,12 +137,60 @@ class TicketHubSeeder extends Seeder
             ['name' => 'VIP override', 'first_response' => '10 minutes', 'resolution' => '2 hours', 'hours' => '24×7', 'escalation' => 'Page on-call immediately', 'active' => 0],
         ]);
 
+        // Structured conditions/actions directly, matching the schema the
+        // AutomationEngineV2 migration leaves behind — the free-text `cond`/
+        // `action` columns these rows used to carry are dropped by that
+        // migration, so seeding them here (rather than the old text form)
+        // keeps this seeder correct whichever order migrate/seed run in.
         $db->table('automations')->insertBatch([
-            ['name' => 'Route password resets to Identity & Access', 'when_event' => 'Ticket is created', 'cond' => 'Subject contains "password"', 'action' => 'Assign to Identity & Access, set priority Medium', 'runs' => 0, 'active' => 1],
-            ['name' => 'Escalate urgent tickets at 50% SLA', 'when_event' => 'Time is reached', 'cond' => 'Priority is Urgent and 50% of resolution SLA elapsed', 'action' => 'Email Service Desk Lead, add tag escalated', 'runs' => 0, 'active' => 1],
-            ['name' => 'Auto-close resolved tickets after 5 days', 'when_event' => 'Time is reached', 'cond' => 'Status is Resolved for 5 days', 'action' => 'Set status Closed, send satisfaction survey', 'runs' => 0, 'active' => 1],
-            ['name' => 'Flag VIP requesters', 'when_event' => 'Ticket is created', 'cond' => 'Requester is in group Executive', 'action' => 'Apply VIP override SLA, notify on-call', 'runs' => 0, 'active' => 0],
-            ['name' => 'Nudge pending tickets', 'when_event' => 'Time is reached', 'cond' => 'Status is Pending for 3 days with no reply', 'action' => 'Email requester a reminder', 'runs' => 0, 'active' => 1],
+            [
+                'name' => 'Route password resets to Identity & Access', 'when_event' => 'Ticket is created',
+                'conditions' => json_encode([['field' => 'subject', 'op' => 'contains', 'value' => 'password']]),
+                'actions' => json_encode([['type' => 'move_group', 'value' => '4'], ['type' => 'set_priority', 'value' => 'Medium']]),
+                'runs' => 0, 'active' => 1,
+            ],
+            [
+                'name' => 'Escalate urgent tickets at 50% SLA', 'when_event' => 'Time is reached',
+                'conditions' => json_encode([
+                    ['field' => 'priority', 'op' => 'equals', 'value' => 'Urgent'],
+                    ['field' => 'sla_pct', 'op' => 'gte', 'value' => '50'],
+                    ['field' => 'status', 'op' => 'not_equals', 'value' => 'Resolved'],
+                    ['field' => 'status', 'op' => 'not_equals', 'value' => 'Closed'],
+                ]),
+                'actions' => json_encode([
+                    ['type' => 'escalate', 'value' => ''],
+                    ['type' => 'email_agent', 'value' => "{{ticket.id}} \"{{ticket.subject}}\" is Urgent and past half of its resolution SLA.\n\n{{ticket.agent_url}}"],
+                ]),
+                'runs' => 0, 'active' => 1,
+            ],
+            [
+                'name' => 'Auto-close resolved tickets after 5 days', 'when_event' => 'Time is reached',
+                'conditions' => json_encode([
+                    ['field' => 'status', 'op' => 'equals', 'value' => 'Resolved'],
+                    ['field' => 'hours_since_resolved', 'op' => 'gte', 'value' => '120'],
+                ]),
+                'actions' => json_encode([['type' => 'set_status', 'value' => 'Closed']]),
+                'runs' => 0, 'active' => 1,
+            ],
+            [
+                'name' => 'Flag VIP requesters', 'when_event' => 'Ticket is created',
+                'conditions' => json_encode([['field' => 'requester_email', 'op' => 'contains', 'value' => 'ceo@']]),
+                'actions' => json_encode([['type' => 'set_priority', 'value' => 'Urgent'], ['type' => 'escalate', 'value' => '']]),
+                'runs' => 0, 'active' => 0,
+            ],
+            [
+                'name' => 'Nudge pending tickets', 'when_event' => 'Time is reached',
+                'conditions' => json_encode([
+                    ['field' => 'status', 'op' => 'equals', 'value' => 'Pending'],
+                    ['field' => 'hours_since_updated', 'op' => 'gte', 'value' => '72'],
+                ]),
+                'actions' => json_encode([['type' => 'email_requester', 'value' => "Hi {{requester.first}},\n\nWe are waiting on a reply from you before {{ticket.id}} \"{{ticket.subject}}\" can move forward.\n\nReply here:\n{{ticket.url}}\n\n— TicketHub Service Desk"]]),
+                'runs' => 0, 'active' => 1,
+            ],
+            // 'Warn assignee at 80% of resolution SLA' is NOT seeded here: the
+            // AutomationEngineV2 migration inserts it unconditionally on every
+            // fresh migrate, seeded or not. Adding it here too would double it
+            // up on a normal migrate-then-seed install.
         ]);
 
         $db->table('ticket_fields')->insertBatch([
