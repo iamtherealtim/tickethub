@@ -1,25 +1,26 @@
 # Screenshots
 
-The README embeds these images. Capture each at 1440×900 (desktop) in **light**
-mode, and the same four in **dark** mode with a `-dark` suffix, signed in as
-the seeded administrator (`maya.ortiz@tickethub.co`) unless noted. Crop
-nothing; the browser chrome is left out.
+The README embeds these images, captured at 1440×900 in both light and dark
+mode, signed in as the seeded administrator (`maya.ortiz@tickethub.co`)
+except the portal shots, which use `jordan.whitfield@tickethub.co`.
 
-| File                   | Page                                   | Notes                                                      |
-|------------------------|----------------------------------------|------------------------------------------------------------|
-| `dashboard.png`        | `/app/dashboard`                       | KPIs, breach horizon, volume chart, queue, announcements    |
-| `ticket.png`           | `/app/tickets/<code>` (an open ticket) | Conversation on the left, SLA burn bar and properties panel |
-| `portal-home.png`      | `/portal` as `jordan.whitfield@tickethub.co` | Hero search, quick actions, notices, popular answers  |
-| `admin.png`            | `/app/admin`                           | General tab                                                |
-| `*-dark.png`           | same four pages                        | Set the theme to Dark from the account menu first          |
+| File | Page | Notes |
+|------|------|-------|
+| `dashboard.png` / `dashboard-dark.png` | `/app/dashboard` | KPIs, breach horizon, volume chart, agent workload |
+| `ticket.png` / `ticket-dark.png` | `/app/tickets/INC-2090` | Conversation, Markdown reply editor, SLA and properties panel |
+| `portal.png` / `portal-dark.png` | `/portal` | Hero search, quick actions, notices, open requests |
+| `admin-sla.png` / `admin-sla-dark.png` | `/app/admin/sla` | Admin nav plus the SLA policies table |
 
-Regenerate all of them after any palette or layout change so the README does
-not drift from the product.
+Dark mode is set via `localStorage.setItem('th-theme', 'dark')` (what the
+in-app toggle does), then reloading the page.
+
+Regenerate all eight after any palette or layout change so the README does
+not drift from the product. The debug toolbar icon that only appears with
+`CI_ENVIRONMENT=development` is removed from the page before capture — it
+would never appear in a production deployment either.
 
 ## Status
 
-The screenshots were not written to disk by the tooling used to build this
-release: the browser used for verification can render and inspect pages but
-cannot save an image file into the repository. Capture them manually with the
-table above (any browser's "capture full size screenshot" DevTools command
-works) and drop the PNGs into this directory.
+Captured 2026-09-23 against a locally seeded instance, using a small
+Chrome DevTools Protocol script (no browser extension or paid tool needed —
+any Chromium build's `--remote-debugging-port` works the same way).
