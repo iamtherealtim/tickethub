@@ -18,8 +18,9 @@ class Setup extends BaseCommand
     protected $group       = 'TicketHub';
     protected $name        = 'tickethub:setup';
     protected $description = 'Creates the first Administrator account for a fresh installation.';
-    protected $usage       = 'tickethub:setup --email <email> [--name <name>] [--password <password>] [--force]';
+    protected $usage       = 'tickethub:setup --email <email> [--name <name>] [--password <password>] [--url <address>] [--force]';
     protected $options     = [
+        '--url'      => 'Site address people will use, e.g. https://helpdesk.example.com/ (same as tickethub:url). Asked for interactively when still localhost.',
         '--email'    => 'Email address the administrator signs in with (required).',
         '--name'     => 'Display name. Defaults to the part of the email before @.',
         '--password' => 'Initial password (min 12 chars). Omit to have a random one generated and printed once.',
@@ -69,6 +70,25 @@ class Setup extends BaseCommand
             return EXIT_USER_INPUT;
         }
 
+        // Site address: links in every email and the SSO callbacks depend on it,
+        // so settle it here rather than leave the installer on localhost.
+        $url = trim((string) SiteUrl::option('url', $params));
+        $docker = getenv('TICKETHUB_DOCKER') === '1';
+        if ($url === '' && ! $docker && ENVIRONMENT === 'production' && function_exists('stream_isatty') && stream_isatty(STDIN)
+            && \App\Libraries\SiteAddress::isLocalHost(\App\Libraries\SiteAddress::parse(config('App')->baseURL)['host'])) {
+            $url = trim(CLI::prompt('Address people will use (e.g. https://helpdesk.example.com/), blank to keep ' . config('App')->baseURL));
+        }
+        if ($url !== '') {
+            if ($docker) {
+                CLI::error('--url is not used in Docker: set TICKETHUB_DOMAIN in .env.docker, then docker compose up -d.');
+
+                return EXIT_USER_INPUT;
+            }
+            if ($this->call('tickethub:url', [$url]) !== EXIT_SUCCESS) {
+                return EXIT_USER_INPUT;
+            }
+        }
+
         $now  = date('Y-m-d H:i:s');
         $hash = password_hash($password, PASSWORD_DEFAULT);
 
@@ -105,7 +125,9 @@ class Setup extends BaseCommand
 
         CLI::newLine();
         CLI::write('Next steps', 'cyan');
-        CLI::write('  1. Sign in at ' . rtrim((string) config('App')->baseURL, '/') . '/login and set your own password.');
+        $siteUrl = $url !== '' ? \App\Libraries\SiteAddress::normalise($url) : (string) config('App')->baseURL;
+        CLI::write('  1. Sign in at ' . rtrim($siteUrl, '/') . '/login and set your own password.');
+        CLI::write('     Admin → Address & HTTPS checks the address and certificate.');
         CLI::write('  2. Admin → Groups: create your support teams, then Admin → Routing: pick the default team.');
         CLI::write('  3. Admin → Email settings: SMTP (needed for invites and password resets).');
         CLI::write('  4. Admin → Single sign-on: optional Microsoft Entra ID; Admin → Integrations: API tokens, PDQ.');

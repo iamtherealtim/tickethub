@@ -52,7 +52,8 @@ RUN set -eux; \
         echo 'memory_limit=256M'; \
     } > "$PHP_INI_DIR/conf.d/tickethub.ini"
 
-# Apache: serve public/ only, allow .htaccess rewrites, honour X-Forwarded-* from a proxy.
+# Apache: serve public/ only, allow .htaccess rewrites. X-Forwarded-* from the
+# bundled Caddy is honoured by the app itself (app.proxyIPs), not by Apache.
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 RUN set -eux; \
     a2enmod rewrite headers remoteip; \
@@ -63,6 +64,10 @@ RUN set -eux; \
     a2enconf hardening
 
 WORKDIR /var/www/html
+
+# Tells the app it is running in this image: Admin → Address & HTTPS and
+# `spark tickethub:url` then point at .env.docker instead of .env.
+ENV TICKETHUB_DOCKER=1
 
 # Application code (see .dockerignore for what stays out) plus the vendor/
 # directory built in the composer stage above. Owned by root on purpose: the

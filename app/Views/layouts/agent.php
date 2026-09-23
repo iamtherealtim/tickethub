@@ -82,6 +82,25 @@
       <button data-modal="userMenu" class="lg:hidden"><?= th_avatar($me, 30) ?></button>
     </header>
     <main id="view" class="flex-1 overflow-y-auto">
+      <?php
+      // Administrators only: a one-line warning when the address or HTTPS setup is
+      // wrong. Cheap checks plus the certificate result cached by the Address tab —
+      // never a network call on an ordinary page.
+      if (($me['role'] ?? '') === 'Administrator' && ($tab ?? '') !== 'address') {
+          $addrProblems = array_values(array_filter(
+              \App\Libraries\SiteAddress::check(\App\Libraries\SiteAddress::gather(service('request')), \App\Libraries\SiteAddress::cachedCertificate()),
+              static fn ($i) => $i['level'] !== 'info'
+          ));
+          if ($addrProblems !== []) {
+              $isError = in_array('error', array_column($addrProblems, 'level'), true);
+              echo '<a href="' . site_url('app/admin/address') . '" class="flex items-center gap-2.5 px-5 py-2 border-b text-[12.5px] '
+                  . ($isError ? 'bg-alert-50 border-alert-100 text-alert' : 'bg-signal-50 border-signal-100 text-signal') . ' hover:underline">'
+                  . th_icon('warn', 'w-4 h-4 shrink-0') . '<span class="font-semibold">' . esc($addrProblems[0]['title']) . '</span>'
+                  . (count($addrProblems) > 1 ? '<span>and ' . (count($addrProblems) - 1) . ' more</span>' : '')
+                  . '<span class="ml-auto shrink-0 font-medium">Admin → Address &amp; HTTPS →</span></a>';
+          }
+      }
+      ?>
       <?= $this->renderSection('content') ?>
     </main>
   </div>

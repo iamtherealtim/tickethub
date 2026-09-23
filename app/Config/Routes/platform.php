@@ -66,4 +66,7 @@ $routes->group('app', ['filter' => 'adminAuth'], static function ($routes) {
     $routes->post('admin/people/(:num)/anonymize', 'AdminController::anonymizePerson/$1');
 
     $routes->post('admin/data', 'Admin\DataController::save');
+
+    // Address & HTTPS: Caddy's internal root CA, for installing on client PCs.
+    $routes->get('admin/address/root-ca', 'Admin\AddressController::rootCa');
 });
